@@ -37,8 +37,8 @@ def initialize_clients(api_provider):
     generator_client = openai.OpenAI(api_key=api_key, base_url=base_url)
     reflector_client = openai.OpenAI(api_key=api_key, base_url=base_url)
     curator_client = openai.OpenAI(api_key=api_key, base_url=base_url)
-    
-    print("Using Together API for all models")
+
+    print(f"Using {api_provider.capitalize()} API for all models")
     return generator_client, reflector_client, curator_client
 
 def get_section_slug(section_name):

@@ -831,18 +831,9 @@ class ACE:
         with open(pre_train_post_train_results_path, "w") as f:
             json.dump(pre_train_post_train_results, f, indent=2)
 
-        # Save step timings
-        step_timings_path = os.path.join(save_path, "step_timings.json")
+        # Calculate timing statistics
         total_training_time = sum(t["time_seconds"] for t in step_timings)
         avg_step_time = total_training_time / len(step_timings) if step_timings else 0
-        with open(step_timings_path, "w") as f:
-            json.dump({
-                "step_timings": step_timings,
-                "total_training_time_seconds": total_training_time,
-                "total_training_time_minutes": total_training_time / 60,
-                "average_step_time_seconds": avg_step_time,
-                "total_steps": len(step_timings)
-            }, f, indent=2)
 
         # Save final playbook
         final_playbook_path = os.path.join(save_path, f"final_playbook.txt")
@@ -1169,18 +1160,9 @@ class ACE:
         with open(pre_train_post_train_results_path, "w") as f:
             json.dump(pre_train_post_train_results, f, indent=2)
 
-        # Save step timings
-        step_timings_path = os.path.join(save_path, "step_timings.json")
+        # Calculate timing statistics
         total_training_time = sum(t["time_seconds"] for t in step_timings)
         avg_step_time = total_training_time / len(step_timings) if step_timings else 0
-        with open(step_timings_path, "w") as f:
-            json.dump({
-                "step_timings": step_timings,
-                "total_training_time_seconds": total_training_time,
-                "total_training_time_minutes": total_training_time / 60,
-                "average_step_time_seconds": avg_step_time,
-                "total_steps": len(step_timings)
-            }, f, indent=2)
 
         # Save final playbook
         final_playbook_path = os.path.join(save_path, f"final_playbook.txt")

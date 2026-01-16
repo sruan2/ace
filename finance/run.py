@@ -74,11 +74,17 @@ def parse_args():
                         help="Enable bulletpoint analyzer for deduplication and merging")
     parser.add_argument("--bulletpoint_analyzer_threshold", type=float, default=0.90,
                         help="Similarity threshold for bulletpoint analyzer (0-1, default: 0.90)")
-    
+
+    # Data configuration
+    parser.add_argument("--data_config", type=str,
+                        help="Path to data configuration JSON file")
+
     # Output configuration
     parser.add_argument("--save_path", type=str, required=True,
                         help="Directory to save results")
-    
+    parser.add_argument("--plot_online_performance", action="store_true",
+                        help="Generate performance plot for online mode (shows accuracy vs steps)")
+
     return parser.parse_args()
 
 def load_data(data_path: str):

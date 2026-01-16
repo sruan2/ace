@@ -19,14 +19,40 @@ class DataProcessor:
         bird_db_root: Optional[str] = None,
         exec_timeout_ms: int = 20000,
         exec_max_rows: int = 20000,
-        max_samples: int = 1000,     # default cap
-        db_name: Optional[str] = None,  # filter by specific database name
+        max_samples: Optional[int] = None,  # None = use all samples
+        db_name: Optional[str] = None,  # None = use mixed databases (no filter)
+        curriculum: Optional[str] = None,  # None = no curriculum filtering
     ):
+        """
+        Initialize DataProcessor.
+
+        Args:
+            curriculum: Strategy for selecting samples by difficulty. Options:
+                - None: No filtering, use all samples
+                - "simple-only": Only simple difficulty samples
+                - "moderate-only": Only moderate difficulty samples
+                - "challenging-only": Only challenging difficulty samples
+                - "balanced": Equal distribution (1/3 from each difficulty)
+                - "balanced-s2m2c": Balanced simple -> moderate -> challenging order
+                - "balanced-c2m2s": Balanced challenging -> moderate -> simple order
+        """
         self.bird_db_root = bird_db_root
         self.exec_timeout_ms = exec_timeout_ms
         self.exec_max_rows = exec_max_rows
         self.max_samples = max_samples
         self.db_name = db_name
+        self.curriculum = curriculum
+
+        # Validate curriculum option
+        valid_curricula = [
+            None, "simple-only", "moderate-only", "challenging-only",
+            "balanced", "balanced-s2m2c", "balanced-c2m2s"
+        ]
+        if self.curriculum not in valid_curricula:
+            raise ValueError(
+                f"Invalid curriculum '{self.curriculum}'. "
+                f"Valid options: {[c for c in valid_curricula if c is not None]}"
+            )
 
     # -------------------------
     # REQUIRED SIGNATURES
@@ -48,7 +74,11 @@ class DataProcessor:
                 if (item.get("db_name") or item.get("db_id") or "") == self.db_name
             ]
 
-        # Cap samples (default 10)
+        # Apply curriculum-based filtering and ordering
+        if self.curriculum is not None:
+            raw_data = self._apply_curriculum(raw_data)
+
+        # Cap samples
         raw_data = raw_data[: self.max_samples] if self.max_samples is not None else raw_data
 
         for item in raw_data:
@@ -152,6 +182,95 @@ class DataProcessor:
                     correct += 1
 
         return correct / len(predictions)
+
+    # -------------------------
+    # CURRICULUM LOGIC
+    # -------------------------
+
+    def _apply_curriculum(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Apply curriculum-based filtering and ordering to raw data.
+
+        Args:
+            raw_data: List of raw data items with 'difficulty' field
+
+        Returns:
+            Filtered and/or reordered list based on curriculum strategy
+        """
+        if not self.curriculum:
+            return raw_data
+
+        # Categorize samples by difficulty
+        simple_samples = []
+        moderate_samples = []
+        challenging_samples = []
+        unknown_samples = []
+
+        for item in raw_data:
+            difficulty = (item.get("difficulty") or "").lower()
+            if difficulty == "simple":
+                simple_samples.append(item)
+            elif difficulty == "moderate":
+                moderate_samples.append(item)
+            elif difficulty == "challenging":
+                challenging_samples.append(item)
+            else:
+                unknown_samples.append(item)
+
+        # Apply curriculum strategy
+        if self.curriculum == "simple-only":
+            result = simple_samples
+            print(f"Curriculum 'simple-only': Selected {len(result)} simple samples")
+
+        elif self.curriculum == "moderate-only":
+            result = moderate_samples
+            print(f"Curriculum 'moderate-only': Selected {len(result)} moderate samples")
+
+        elif self.curriculum == "challenging-only":
+            result = challenging_samples
+            print(f"Curriculum 'challenging-only': Selected {len(result)} challenging samples")
+
+        elif self.curriculum == "balanced":
+            # Equal distribution from each difficulty (1/3 each)
+            min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+            result = (
+                simple_samples[:min_count] +
+                moderate_samples[:min_count] +
+                challenging_samples[:min_count]
+            )
+            print(f"Curriculum 'balanced': Selected {min_count} from each difficulty "
+                  f"(total: {len(result)} samples)")
+
+        elif self.curriculum == "balanced-s2m2c":
+            # Balanced: simple -> moderate -> challenging
+            min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+            result = (
+                simple_samples[:min_count] +
+                moderate_samples[:min_count] +
+                challenging_samples[:min_count]
+            )
+            print(f"Curriculum 'balanced-s2m2c': {min_count} simple -> {min_count} moderate -> "
+                  f"{min_count} challenging (total: {len(result)} samples)")
+
+        elif self.curriculum == "balanced-c2m2s":
+            # Balanced: challenging -> moderate -> simple
+            min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+            result = (
+                challenging_samples[:min_count] +
+                moderate_samples[:min_count] +
+                simple_samples[:min_count]
+            )
+            print(f"Curriculum 'balanced-c2m2s': {min_count} challenging -> {min_count} moderate -> "
+                  f"{min_count} simple (total: {len(result)} samples)")
+
+        else:
+            # Should not reach here due to validation in __init__
+            result = raw_data
+
+        if unknown_samples:
+            print(f"Warning: {len(unknown_samples)} samples with unknown difficulty were excluded")
+
+        return result
 
     # -------------------------
     # EXECUTION EVAL INTERNALS

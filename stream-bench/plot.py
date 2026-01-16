@@ -237,7 +237,7 @@ Examples:
   python stream-bench/plot.py --run_dir results/ace_run_20260115_213336_bird_online
 
   # Specify mode explicitly (default is 'online')
-  python stream-bench/plot.py --run_dir results/ace_run_20260115_213336_bird_onlin --mode online
+  python stream-bench/plot.py --run_dir results/ace_run_20260115_213336_bird_online --mode online
         """
     )
 

@@ -6,9 +6,10 @@ import os
 import sys
 import json
 import time
+import traceback
 import matplotlib.pyplot as plt
-from .data_processor import DataProcessor
 
+from .data_processor import DataProcessor
 from ace import ACE
 from finance.run import parse_args, load_initial_playbook, load_data
 
@@ -342,7 +343,6 @@ def main():
         print(f"ERROR: An exception occurred")
         print(f"{'='*60}")
         print(f"{type(e).__name__}: {e}")
-        import traceback
         traceback.print_exc()
         print(f"{'='*60}\n")
         raise

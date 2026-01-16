@@ -183,7 +183,7 @@ def main():
         else:
             print("Using empty playbook as initial playbook\n")
 
-        # Create ACE system
+        # Create ACE system with a custom wrapper to intercept path creation
         ace_system = ACE(
             api_provider=args.api_provider,
             generator_model=args.generator_model,
@@ -211,7 +211,7 @@ def main():
             'mode': args.mode,
             'json_mode': args.json_mode,
             'no_ground_truth': args.no_ground_truth,
-            'save_dir': args.save_path,
+            'save_dir': args.save_path,  # Pass parent directory
             'test_workers': args.test_workers,
             'initial_playbook_path': args.initial_playbook_path,
             'use_bulletpoint_analyzer': args.use_bulletpoint_analyzer,
@@ -219,6 +219,46 @@ def main():
             'api_provider': args.api_provider,
             'config_name': config_filename
         }
+
+        # Create a save hook to intercept when ACE creates the save path
+        original_setup_paths = ace_system._setup_paths
+        run_save_path_container = {'path': None}
+
+        def setup_paths_with_data_save(*args, **kwargs):
+            """Wrapper that saves processed data right after path creation."""
+            result = original_setup_paths(*args, **kwargs)
+            # Extract save_path from result (first element of tuple)
+            save_path = result[0] if isinstance(result, tuple) else result
+            run_save_path_container['path'] = save_path
+
+            # Save processed data immediately after folder creation
+            print(f"\nSaving preprocessed data to: {save_path}")
+            processed_data_dir = os.path.join(save_path, "processed_data")
+            os.makedirs(processed_data_dir, exist_ok=True)
+
+            if train_samples is not None:
+                train_path = os.path.join(processed_data_dir, "train_samples.json")
+                with open(train_path, 'w') as f:
+                    json.dump(train_samples, f, indent=2)
+                print(f"  - Saved train samples ({len(train_samples)} samples)")
+
+            if val_samples is not None:
+                val_path = os.path.join(processed_data_dir, "val_samples.json")
+                with open(val_path, 'w') as f:
+                    json.dump(val_samples, f, indent=2)
+                print(f"  - Saved val samples ({len(val_samples)} samples)")
+
+            if test_samples is not None:
+                test_path = os.path.join(processed_data_dir, "test_samples.json")
+                with open(test_path, 'w') as f:
+                    json.dump(test_samples, f, indent=2)
+                print(f"  - Saved test samples ({len(test_samples)} samples)")
+
+            print()  # blank line
+            return result
+
+        # Replace the method temporarily
+        ace_system._setup_paths = setup_paths_with_data_save
 
         # Execute using the unified run method
         print(f"Starting ACE run at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -236,38 +276,19 @@ def main():
         run_elapsed_time = time.time() - run_start_time
         print(f"\nACE run completed in {run_elapsed_time/60:.2f} minutes ({run_elapsed_time:.2f} seconds)")
 
-        # Save preprocessed data to individual run folder
-        run_save_path = results.get('save_path', args.save_path)
+        # Get the actual save path that was created
+        run_save_path = run_save_path_container['path']
+        if not run_save_path:
+            # Fallback to results if something went wrong with the hook
+            run_save_path = results.get('save_path', args.save_path)
 
-        # Now set up logger to capture remaining output
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        log_file_path = os.path.join(run_save_path, f"terminal_output_{timestamp}.txt")
+        # Set up logger to capture remaining output
+        log_timestamp = time.strftime("%Y%m%d_%H%M%S")
+        log_file_path = os.path.join(run_save_path, f"terminal_output_{log_timestamp}.txt")
         logger = TeeLogger(log_file_path)
         sys.stdout = logger
 
         print(f"Logging terminal output to: {log_file_path}\n")
-
-        # Create processed_data subfolder
-        processed_data_dir = os.path.join(run_save_path, "processed_data")
-        os.makedirs(processed_data_dir, exist_ok=True)
-
-        if train_samples is not None:
-            train_path = os.path.join(processed_data_dir, "train_samples.json")
-            with open(train_path, 'w') as f:
-                json.dump(train_samples, f, indent=2)
-            print(f"Saved train samples to {train_path}")
-
-        if val_samples is not None:
-            val_path = os.path.join(processed_data_dir, "val_samples.json")
-            with open(val_path, 'w') as f:
-                json.dump(val_samples, f, indent=2)
-            print(f"Saved val samples to {val_path}")
-
-        if test_samples is not None:
-            test_path = os.path.join(processed_data_dir, "test_samples.json")
-            with open(test_path, 'w') as f:
-                json.dump(test_samples, f, indent=2)
-            print(f"Saved test samples to {test_path}")
 
         # Calculate and display total timing
         total_elapsed_time = time.time() - total_start_time

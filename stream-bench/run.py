@@ -4,6 +4,7 @@ Stream Bench task runner using ACE system.
 """
 import os
 import json
+import time
 from .data_processor import DataProcessor
 
 from ace import ACE
@@ -68,6 +69,9 @@ def preprocess_data(task_name, config, mode):
 
 def main():
     """Main execution function."""
+    # Start total timing
+    total_start_time = time.time()
+
     args = parse_args()
 
     print(f"\n{'='*60}")
@@ -129,6 +133,9 @@ def main():
     }
 
     # Execute using the unified run method
+    print(f"Starting ACE run at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    run_start_time = time.time()
+
     results = ace_system.run(
         mode=args.mode,
         train_samples=train_samples,
@@ -137,6 +144,9 @@ def main():
         data_processor=data_processor,
         config=config
     )
+
+    run_elapsed_time = time.time() - run_start_time
+    print(f"\nACE run completed in {run_elapsed_time/60:.2f} minutes ({run_elapsed_time:.2f} seconds)")
 
     # Save preprocessed data to individual run folder
     run_save_path = results.get('save_path', args.save_path)
@@ -158,6 +168,26 @@ def main():
         with open(test_path, 'w') as f:
             json.dump(test_samples, f, indent=2)
         print(f"Saved test samples to {test_path}")
+
+    # Calculate and save total timing
+    total_elapsed_time = time.time() - total_start_time
+
+    print(f"Total time: {total_elapsed_time/60:.2f} minutes ({total_elapsed_time:.2f} seconds)")
+
+    # Save timing information to file
+    timing_info = {
+        'total_time_seconds': total_elapsed_time,
+        'total_time_minutes': total_elapsed_time / 60,
+        'run_time_seconds': run_elapsed_time,
+        'run_time_minutes': run_elapsed_time / 60,
+        'start_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(total_start_time)),
+        'end_time': time.strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    timing_path = os.path.join(run_save_path, "timing_info.json")
+    with open(timing_path, 'w') as f:
+        json.dump(timing_info, f, indent=2)
+    print(f"Saved timing information to {timing_path}")
 
 
 if __name__ == "__main__":

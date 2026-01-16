@@ -162,13 +162,14 @@ class DataProcessor:
         return predicted == ground_truth
     
     
-    def answer_is_correct(self, predicted: str, ground_truth: str) -> bool:
+    def answer_is_correct(self, predicted: str, ground_truth: str, sample_metadata=None) -> bool:
         """
         Dataset-specific answer correctness check.
 
         Args:
             predicted: Model's answer
             ground_truth: Ground truth answer
+            sample_metadata: Optional dict containing sample metadata (unused for finance tasks)
 
         Returns:
             bool: True if answer is correct, False otherwise

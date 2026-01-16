@@ -178,7 +178,10 @@ def evaluate_single_test_sample(args_tuple, data_processor) -> Tuple[Dict, str]:
 
         final_answer = extract_answer(gen_response)
         # print("============= calling data_processor answer_is_correct ===========")
-        is_correct = data_processor.answer_is_correct(final_answer, target)
+
+        # Pass sample metadata for thread-safe evaluation (e.g., db_name for SQL tasks)
+        sample_metadata = task_dict.get("others", None)
+        is_correct = data_processor.answer_is_correct(final_answer, target, sample_metadata)
 
         return {
             "index": i,

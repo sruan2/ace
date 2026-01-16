@@ -1098,10 +1098,10 @@ class ACE:
             
             # End of window - compute training accuracies for this window
             pre_train_accuracy = data_processor.evaluate_accuracy(
-                epoch_answers_pre_train, epoch_targets_pre_train
+                epoch_answers_pre_train, epoch_targets_pre_train, window_samples
             )
             post_train_accuracy = data_processor.evaluate_accuracy(
-                epoch_answers_post_train, epoch_targets_post_train
+                epoch_answers_post_train, epoch_targets_post_train, window_samples
             )
             
             window_train_result = {

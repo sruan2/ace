@@ -291,20 +291,24 @@ def main():
 
         print(f"Logging terminal output to: {log_file_path}\n")
 
+        # Create processed_data subfolder
+        processed_data_dir = os.path.join(run_save_path, "processed_data")
+        os.makedirs(processed_data_dir, exist_ok=True)
+
         if train_samples is not None:
-            train_path = os.path.join(run_save_path, "train_samples.json")
+            train_path = os.path.join(processed_data_dir, "train_samples.json")
             with open(train_path, 'w') as f:
                 json.dump(train_samples, f, indent=2)
             print(f"Saved train samples to {train_path}")
 
         if val_samples is not None:
-            val_path = os.path.join(run_save_path, "val_samples.json")
+            val_path = os.path.join(processed_data_dir, "val_samples.json")
             with open(val_path, 'w') as f:
                 json.dump(val_samples, f, indent=2)
             print(f"Saved val samples to {val_path}")
 
         if test_samples is not None:
-            test_path = os.path.join(run_save_path, "test_samples.json")
+            test_path = os.path.join(processed_data_dir, "test_samples.json")
             with open(test_path, 'w') as f:
                 json.dump(test_samples, f, indent=2)
             print(f"Saved test samples to {test_path}")

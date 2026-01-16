@@ -5,6 +5,7 @@ Stream Bench task runner using ACE system.
 import os
 import sys
 import json
+import re
 import time
 import traceback
 
@@ -296,8 +297,18 @@ def main():
             # Fallback to results if something went wrong with the hook
             run_save_path = results.get('save_path', args.save_path)
 
+        # Extract timestamp from the ace_run folder name to match it exactly
+        # Folder format: ace_run_YYYYMMDD_HHMMSS_task_name_...
+        folder_name = os.path.basename(run_save_path)
+        timestamp_match = re.search(r'ace_run_(\d{8}_\d{6})', folder_name)
+        if timestamp_match:
+            ace_run_timestamp = timestamp_match.group(1)
+        else:
+            # Fallback to original timestamp if extraction fails
+            ace_run_timestamp = log_timestamp
+
         # Move the log file from temp location to final location
-        final_log_path = os.path.join(run_save_path, f"terminal_output_{log_timestamp}.txt")
+        final_log_path = os.path.join(run_save_path, f"terminal_output_{ace_run_timestamp}.txt")
 
         # Close current logger before moving file
         logger.close()

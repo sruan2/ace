@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+import time
 from typing import List, Dict, Any, Optional, Tuple
 
 class DataProcessor:
@@ -105,8 +106,17 @@ class DataProcessor:
             print(f"Warning: No db_name available in sample metadata")
             return False
 
-        print(f"Evaluating on DB: {db_name}")
-        return self._exec_match(predicted, ground_truth, db_name)
+        print(f"\n[EVAL START] Evaluating on DB: {db_name}")
+        print(f"[EVAL START] Predicted SQL: {predicted[:200]}...")  # First 200 chars
+        print(f"[EVAL START] Ground truth SQL: {ground_truth[:200]}...")
+
+        try:
+            result = self._exec_match(predicted, ground_truth, db_name)
+            print(f"[EVAL DONE] Result: {result}")
+            return result
+        except Exception as e:
+            print(f"[EVAL ERROR] Exception during evaluation: {e}")
+            return False
 
     def evaluate_accuracy(self, predictions, ground_truths, samples=None):
         """
@@ -155,7 +165,10 @@ class DataProcessor:
             return False
 
         try:
+            print(f"[EXEC] Running PREDICTED SQL on {db_name}")
             pred_res = self._run_sql(sqlite_path, predicted_sql)
+
+            print(f"[EXEC] Running GROUND TRUTH SQL on {db_name}")
             gold_res = self._run_sql(sqlite_path, gold_sql)
 
             # Print execution results
@@ -176,14 +189,17 @@ class DataProcessor:
                 print(f"  ... ({len(gold_res) - 10} more rows)")
             print("-" * 50)
 
+            print(f"[EXEC] Normalizing and comparing results...")
+            match = self._normalize_result(pred_res) == self._normalize_result(gold_res)
+            print(f"[EXEC] Match result: {match}")
+            return match
+
         except Exception as e:
             print(f"\n--- Execution Error ---")
             print(f"DB: {db_name}")
             print(f"Error: {e}")
             print("-" * 50)
             return False
-
-        return self._normalize_result(pred_res) == self._normalize_result(gold_res)
 
     def _find_sqlite_path(self, db_name: str) -> Optional[str]:
         """
@@ -209,13 +225,39 @@ class DataProcessor:
         if any(k in lowered for k in ["insert ", "update ", "delete ", "drop ", "alter ", "create ", "pragma ", "attach "]):
             raise ValueError("Unsafe SQL in evaluation")
 
-        conn = sqlite3.connect(sqlite_path)
+        print(f"[DEBUG] Connecting to database: {sqlite_path}")
+        conn = sqlite3.connect(sqlite_path, timeout=self.exec_timeout_ms / 1000.0)
+
+        # Set up timeout mechanism using progress handler
+        start_time = time.time()
+        timeout_seconds = self.exec_timeout_ms / 1000.0
+
+        def progress_handler():
+            if time.time() - start_time > timeout_seconds:
+                print(f"[TIMEOUT] Query exceeded {timeout_seconds}s timeout")
+                return 1  # Non-zero return aborts the operation
+            return 0
+
         try:
-            conn.execute(f"PRAGMA busy_timeout = {int(self.exec_timeout_ms)};")
+            # Call progress handler every 1000 VM instructions
+            conn.set_progress_handler(progress_handler, 1000)
+
+            print(f"[DEBUG] Executing SQL query...")
             cur = conn.cursor()
             cur.execute(sql)
+
+            print(f"[DEBUG] Fetching results (max {self.exec_max_rows} rows)...")
             rows = cur.fetchmany(self.exec_max_rows)
+
+            elapsed = time.time() - start_time
+            print(f"[DEBUG] Query completed in {elapsed:.2f}s, returned {len(rows)} rows")
+
             return [tuple(r) for r in rows]
+        except sqlite3.OperationalError as e:
+            elapsed = time.time() - start_time
+            if "interrupted" in str(e).lower():
+                raise TimeoutError(f"SQL query timed out after {elapsed:.2f}s (limit: {timeout_seconds}s)")
+            raise
         finally:
             conn.close()
 

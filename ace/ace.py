@@ -366,7 +366,9 @@ class ACE:
             print(f"Test Accuracy: {results['test_results']['accuracy']:.3f}")
         print(f"Results saved to: {save_path}")
         print(f"{'='*60}\n")
-        
+
+        # Add save_path to results for external use
+        results['save_path'] = save_path
         return results
     
     def _run_test(

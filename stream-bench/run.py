@@ -88,27 +88,6 @@ def main():
         args.mode
     )
 
-    # Save preprocessed data to results folder
-    os.makedirs(args.save_path, exist_ok=True)
-
-    if train_samples is not None:
-        train_path = os.path.join(args.save_path, "train_samples.json")
-        with open(train_path, 'w') as f:
-            json.dump(train_samples, f, indent=2)
-        print(f"Saved train samples to {train_path}")
-
-    if val_samples is not None:
-        val_path = os.path.join(args.save_path, "val_samples.json")
-        with open(val_path, 'w') as f:
-            json.dump(val_samples, f, indent=2)
-        print(f"Saved val samples to {val_path}")
-
-    if test_samples is not None:
-        test_path = os.path.join(args.save_path, "test_samples.json")
-        with open(test_path, 'w') as f:
-            json.dump(test_samples, f, indent=2)
-        print(f"Saved test samples to {test_path}")
-
     # Load initial playbook (or use empty if None provided)
     initial_playbook = load_initial_playbook(args.initial_playbook_path)
     if initial_playbook:
@@ -158,6 +137,27 @@ def main():
         data_processor=data_processor,
         config=config
     )
+
+    # Save preprocessed data to individual run folder
+    run_save_path = results.get('save_path', args.save_path)
+
+    if train_samples is not None:
+        train_path = os.path.join(run_save_path, "train_samples.json")
+        with open(train_path, 'w') as f:
+            json.dump(train_samples, f, indent=2)
+        print(f"Saved train samples to {train_path}")
+
+    if val_samples is not None:
+        val_path = os.path.join(run_save_path, "val_samples.json")
+        with open(val_path, 'w') as f:
+            json.dump(val_samples, f, indent=2)
+        print(f"Saved val samples to {val_path}")
+
+    if test_samples is not None:
+        test_path = os.path.join(run_save_path, "test_samples.json")
+        with open(test_path, 'w') as f:
+            json.dump(test_samples, f, indent=2)
+        print(f"Saved test samples to {test_path}")
 
 
 if __name__ == "__main__":

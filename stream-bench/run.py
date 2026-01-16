@@ -129,7 +129,17 @@ def main():
 
     args = parse_args()
 
-    # Print initial banner (before logger setup)
+    # Create temporary log directory to capture all output from the start
+    temp_log_dir = os.path.join(args.save_path, "temp_logs")
+    os.makedirs(temp_log_dir, exist_ok=True)
+    log_timestamp = time.strftime("%Y%m%d_%H%M%S")
+    temp_log_path = os.path.join(temp_log_dir, f"terminal_output_{log_timestamp}.txt")
+
+    # Set up logger immediately to capture ALL output
+    logger = TeeLogger(temp_log_path)
+    sys.stdout = logger
+
+    # Print initial banner (now captured by logger)
     print(f"\n{'='*60}")
     print(f"ACE SYSTEM - Stream Bench")
     print(f"{'='*60}")
@@ -137,9 +147,9 @@ def main():
     print(f"Mode: {args.mode.upper().replace('_', ' ')}")
     print(f"Generator Model: {args.generator_model}")
     print(f"Data Config: {args.data_config}")
+    print(f"Logging all terminal output to: {temp_log_path}")
     print(f"{'='*60}\n")
 
-    logger = None
     try:
 
         # Load data configuration
@@ -286,13 +296,21 @@ def main():
             # Fallback to results if something went wrong with the hook
             run_save_path = results.get('save_path', args.save_path)
 
-        # Set up logger to capture remaining output
-        log_timestamp = time.strftime("%Y%m%d_%H%M%S")
-        log_file_path = os.path.join(run_save_path, f"terminal_output_{log_timestamp}.txt")
-        logger = TeeLogger(log_file_path)
+        # Move the log file from temp location to final location
+        final_log_path = os.path.join(run_save_path, f"terminal_output_{log_timestamp}.txt")
+
+        # Close current logger before moving file
+        logger.close()
+
+        # Move the log file to final location
+        import shutil
+        shutil.move(temp_log_path, final_log_path)
+
+        # Reopen logger with final path to continue logging
+        logger = TeeLogger(final_log_path)
         sys.stdout = logger
 
-        print(f"Logging terminal output to: {log_file_path}\n")
+        print(f"\nMoved terminal output log to: {final_log_path}")
 
         # Calculate and display total timing
         total_elapsed_time = time.time() - total_start_time
@@ -316,8 +334,11 @@ def main():
 
         # Close the logger
         if logger:
+            # Print before closing since we're using the logger
+            final_message = f"Terminal output saved to {final_log_path}"
             logger.close()
-            print(f"Terminal output saved to {log_file_path}")
+            # Print to terminal after logger is closed
+            print(final_message)
 
     except Exception as e:
         print(f"\n{'='*60}")
@@ -329,7 +350,7 @@ def main():
         raise
     finally:
         # Ensure logger is closed even if there's an error
-        if 'logger' in locals():
+        if 'logger' in locals() and logger is not None:
             logger.close()
 
 

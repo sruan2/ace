@@ -7,87 +7,25 @@ import sys
 import json
 import time
 import traceback
-import matplotlib.pyplot as plt
 
-from .data_processor import DataProcessor
 from ace import ACE
-from finance.run import parse_args, load_initial_playbook, load_data
+from .data_processor import DataProcessor
+from .plot import plot_online_performance
+from finance.run import get_base_parser, load_initial_playbook, load_data
 
 
-def plot_online_performance(results, save_path, mode):
-    """
-    Generate performance plots for online mode showing how accuracy changes over steps.
+def parse_args():
+    """Parse command line arguments for stream-bench."""
+    # Get base parser with all common arguments
+    parser = get_base_parser(description='ACE System - Stream Bench')
 
-    Args:
-        results: Results dictionary from ACE run
-        save_path: Path to save the plot
-        mode: Run mode (should be 'online')
-    """
-    if mode != 'online':
-        print(f"Skipping plot generation - only available for online mode (current mode: {mode})")
-        return
+    # Add stream-bench specific arguments
+    parser.add_argument("--data_config", type=str, required=True,
+                        help="Path to data configuration JSON file")
+    parser.add_argument("--plot", action="store_true",
+                        help="Generate performance plot for online mode (shows accuracy vs steps)")
 
-    # Extract data from results
-    if 'online_test_results' not in results:
-        print("Warning: No online test results found. Skipping plot generation.")
-        return
-
-    test_results = results['online_test_results']
-
-    # Check if we have window results
-    if 'window_results' not in test_results:
-        print("Warning: No window results found. Skipping plot generation.")
-        return
-
-    window_results = test_results['window_results']
-
-    # Extract window data
-    window_numbers = [w['window'] for w in window_results]
-    window_accuracies = [w['window_accuracy'] for w in window_results]
-    window_end_indices = [w['end_idx'] for w in window_results]
-
-    # Create figure with multiple subplots
-    _, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-
-    # Plot 1: Accuracy by Window
-    ax1.plot(window_numbers, window_accuracies, 'b-o', linewidth=2, markersize=8, label='Window Accuracy')
-    ax1.axhline(y=test_results['accuracy'], color='r', linestyle='--', linewidth=2, label=f'Overall Accuracy: {test_results["accuracy"]:.3f}')
-    ax1.set_xlabel('Window Number', fontsize=12)
-    ax1.set_ylabel('Accuracy', fontsize=12)
-    ax1.set_title('Online Mode: Accuracy by Training Window', fontsize=14, fontweight='bold')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(fontsize=10)
-    ax1.set_ylim([0, 1.0])
-
-    # Add value labels on points
-    for x, y in zip(window_numbers, window_accuracies):
-        ax1.annotate(f'{y:.3f}', (x, y), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
-
-    # Plot 2: Accuracy by Sample Index (cumulative)
-    ax2.plot(window_end_indices, window_accuracies, 'g-s', linewidth=2, markersize=8, label='Accuracy')
-    ax2.axhline(y=test_results['accuracy'], color='r', linestyle='--', linewidth=2, label=f'Overall Accuracy: {test_results["accuracy"]:.3f}')
-    ax2.set_xlabel('Sample Index (End of Window)', fontsize=12)
-    ax2.set_ylabel('Accuracy', fontsize=12)
-    ax2.set_title('Online Mode: Accuracy by Sample Progress', fontsize=14, fontweight='bold')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(fontsize=10)
-    ax2.set_ylim([0, 1.0])
-
-    plt.tight_layout()
-
-    # Save plot
-    plot_path = os.path.join(save_path, 'online_performance_plot.png')
-    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-    print(f"\nPerformance plot saved to: {plot_path}")
-    plt.close()
-
-    # Also save the data as CSV for external plotting
-    csv_path = os.path.join(save_path, 'online_performance_data.csv')
-    with open(csv_path, 'w') as f:
-        f.write("window,window_accuracy,start_idx,end_idx,samples_in_window\n")
-        for w in window_results:
-            f.write(f"{w['window']},{w['window_accuracy']},{w['start_idx']},{w['end_idx']},{w['window_total']}\n")
-    print(f"Performance data saved to: {csv_path}")
+    return parser.parse_args()
 
 
 class TeeLogger:
@@ -112,6 +50,7 @@ class TeeLogger:
     def close(self):
         sys.stdout = self.terminal
         self.log_file.close()
+        
 
 def preprocess_data(task_name, config, mode):
     """
@@ -327,7 +266,7 @@ def main():
         print(f"{'='*60}\n")
 
         # Generate performance plot if requested (online mode only)
-        if args.plot_online_performance:
+        if args.plot:
             print(f"\n{'='*60}")
             print(f"GENERATING PERFORMANCE PLOT")
             print(f"{'='*60}\n")

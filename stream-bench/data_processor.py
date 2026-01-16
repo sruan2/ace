@@ -67,19 +67,33 @@ class DataProcessor:
         """
         processed = []
 
-        # Filter by db_name if specified
+        # Step 1: Filter by db_name if specified
         if self.db_name is not None:
             raw_data = [
                 item for item in raw_data
                 if (item.get("db_name") or item.get("db_id") or "") == self.db_name
             ]
+            print(f"After db_name filter ('{self.db_name}'): {len(raw_data)} samples")
 
-        # Apply curriculum-based filtering and ordering
+        # Step 2: Apply max_samples cap BEFORE curriculum
+        # This ensures curriculum works within the sample budget
+        if self.max_samples is not None:
+            if len(raw_data) < self.max_samples:
+                raise ValueError(
+                    f"Not enough samples after db_name filtering. "
+                    f"Required: {self.max_samples}, Available: {len(raw_data)}. "
+                    f"Please adjust max_samples or remove/change db_name filter."
+                )
+            # Don't cap yet - just validate we have enough
+            # Curriculum will handle the distribution within max_samples
+
+        # Step 3: Apply curriculum-based filtering and ordering
+        # Curriculum must respect max_samples constraint
         if self.curriculum is not None:
             raw_data = self._apply_curriculum(raw_data)
 
-        # Cap samples
-        raw_data = raw_data[: self.max_samples] if self.max_samples is not None else raw_data
+        # Print summary of processed data
+        self._print_data_summary(raw_data)
 
         for item in raw_data:
             db_name = item.get("db_name") or item.get("db_id") or ""
@@ -232,34 +246,148 @@ class DataProcessor:
 
         elif self.curriculum == "balanced":
             # Equal distribution from each difficulty (1/3 each)
-            min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+            # If max_samples is set, distribute it equally across difficulties
+            if self.max_samples is not None:
+                target_per_difficulty = self.max_samples // 3
+                min_count = min(
+                    len(simple_samples),
+                    len(moderate_samples),
+                    len(challenging_samples),
+                    target_per_difficulty
+                )
+            else:
+                min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+
+            # Check if we have samples from all difficulty levels
+            if min_count == 0:
+                missing = []
+                if len(simple_samples) == 0:
+                    missing.append("simple")
+                if len(moderate_samples) == 0:
+                    missing.append("moderate")
+                if len(challenging_samples) == 0:
+                    missing.append("challenging")
+                raise ValueError(
+                    f"Curriculum 'balanced' requires samples from all difficulty levels. "
+                    f"Missing difficulty levels: {', '.join(missing)}. "
+                    f"Available: simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
+                    f"challenging={len(challenging_samples)}"
+                )
+
             result = (
                 simple_samples[:min_count] +
                 moderate_samples[:min_count] +
                 challenging_samples[:min_count]
             )
+
+            # Check if we can meet max_samples requirement
+            if self.max_samples is not None and len(result) < self.max_samples:
+                raise ValueError(
+                    f"Cannot meet max_samples={self.max_samples} with curriculum 'balanced'. "
+                    f"Need {self.max_samples // 3} samples per difficulty, but only have: "
+                    f"simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
+                    f"challenging={len(challenging_samples)}. "
+                    f"Can only provide {len(result)} samples ({min_count} of each difficulty)."
+                )
+
             print(f"Curriculum 'balanced': Selected {min_count} from each difficulty "
                   f"(total: {len(result)} samples)")
 
         elif self.curriculum == "balanced-s2m2c":
             # Balanced: simple -> moderate -> challenging
-            min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+            # If max_samples is set, distribute it equally across difficulties
+            if self.max_samples is not None:
+                target_per_difficulty = self.max_samples // 3
+                min_count = min(
+                    len(simple_samples),
+                    len(moderate_samples),
+                    len(challenging_samples),
+                    target_per_difficulty
+                )
+            else:
+                min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+
+            # Check if we have samples from all difficulty levels
+            if min_count == 0:
+                missing = []
+                if len(simple_samples) == 0:
+                    missing.append("simple")
+                if len(moderate_samples) == 0:
+                    missing.append("moderate")
+                if len(challenging_samples) == 0:
+                    missing.append("challenging")
+                raise ValueError(
+                    f"Curriculum 'balanced-s2m2c' requires samples from all difficulty levels. "
+                    f"Missing difficulty levels: {', '.join(missing)}. "
+                    f"Available: simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
+                    f"challenging={len(challenging_samples)}"
+                )
+
             result = (
                 simple_samples[:min_count] +
                 moderate_samples[:min_count] +
                 challenging_samples[:min_count]
             )
+
+            # Check if we can meet max_samples requirement
+            if self.max_samples is not None and len(result) < self.max_samples:
+                raise ValueError(
+                    f"Cannot meet max_samples={self.max_samples} with curriculum 'balanced-s2m2c'. "
+                    f"Need {self.max_samples // 3} samples per difficulty, but only have: "
+                    f"simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
+                    f"challenging={len(challenging_samples)}. "
+                    f"Can only provide {len(result)} samples ({min_count} of each difficulty)."
+                )
+
             print(f"Curriculum 'balanced-s2m2c': {min_count} simple -> {min_count} moderate -> "
                   f"{min_count} challenging (total: {len(result)} samples)")
 
         elif self.curriculum == "balanced-c2m2s":
             # Balanced: challenging -> moderate -> simple
-            min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+            # If max_samples is set, distribute it equally across difficulties
+            if self.max_samples is not None:
+                target_per_difficulty = self.max_samples // 3
+                min_count = min(
+                    len(simple_samples),
+                    len(moderate_samples),
+                    len(challenging_samples),
+                    target_per_difficulty
+                )
+            else:
+                min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
+
+            # Check if we have samples from all difficulty levels
+            if min_count == 0:
+                missing = []
+                if len(simple_samples) == 0:
+                    missing.append("simple")
+                if len(moderate_samples) == 0:
+                    missing.append("moderate")
+                if len(challenging_samples) == 0:
+                    missing.append("challenging")
+                raise ValueError(
+                    f"Curriculum 'balanced-c2m2s' requires samples from all difficulty levels. "
+                    f"Missing difficulty levels: {', '.join(missing)}. "
+                    f"Available: simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
+                    f"challenging={len(challenging_samples)}"
+                )
+
             result = (
                 challenging_samples[:min_count] +
                 moderate_samples[:min_count] +
                 simple_samples[:min_count]
             )
+
+            # Check if we can meet max_samples requirement
+            if self.max_samples is not None and len(result) < self.max_samples:
+                raise ValueError(
+                    f"Cannot meet max_samples={self.max_samples} with curriculum 'balanced-c2m2s'. "
+                    f"Need {self.max_samples // 3} samples per difficulty, but only have: "
+                    f"simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
+                    f"challenging={len(challenging_samples)}. "
+                    f"Can only provide {len(result)} samples ({min_count} of each difficulty)."
+                )
+
             print(f"Curriculum 'balanced-c2m2s': {min_count} challenging -> {min_count} moderate -> "
                   f"{min_count} simple (total: {len(result)} samples)")
 
@@ -271,6 +399,70 @@ class DataProcessor:
             print(f"Warning: {len(unknown_samples)} samples with unknown difficulty were excluded")
 
         return result
+
+    def _print_data_summary(self, raw_data: List[Dict[str, Any]]) -> None:
+        """
+        Print a detailed summary of the processed data.
+
+        Args:
+            raw_data: List of processed data items
+        """
+        print("\n" + "="*70)
+        print("PROCESSED DATA SUMMARY")
+        print("="*70)
+
+        # Total size
+        print(f"Total samples: {len(raw_data)}")
+
+        # Database selection
+        if self.db_name:
+            print(f"Database filter: '{self.db_name}'")
+        else:
+            # Count unique databases
+            db_names = set()
+            for item in raw_data:
+                db = item.get("db_name") or item.get("db_id") or "unknown"
+                db_names.add(db)
+            print(f"Database filter: None (using {len(db_names)} databases: {', '.join(sorted(db_names))})")
+
+        # Curriculum
+        if self.curriculum:
+            print(f"Curriculum: {self.curriculum}")
+        else:
+            print("Curriculum: None")
+
+        # Difficulty distribution
+        from collections import Counter
+        difficulty_counts = Counter()
+        for item in raw_data:
+            difficulty = (item.get("difficulty") or "unknown").lower()
+            difficulty_counts[difficulty] += 1
+
+        print(f"\nDifficulty distribution:")
+        print(f"  Simple:      {difficulty_counts.get('simple', 0):4d} samples")
+        print(f"  Moderate:    {difficulty_counts.get('moderate', 0):4d} samples")
+        print(f"  Challenging: {difficulty_counts.get('challenging', 0):4d} samples")
+        if difficulty_counts.get('unknown', 0) > 0:
+            print(f"  Unknown:     {difficulty_counts.get('unknown', 0):4d} samples")
+
+        # Order of difficulties (first 20 and last 20 samples)
+        if len(raw_data) > 0:
+            difficulties = [(item.get("difficulty") or "unknown").lower() for item in raw_data]
+
+            print(f"\nDifficulty order:")
+            if len(difficulties) <= 40:
+                # Show all if 40 or fewer
+                order_str = " -> ".join(difficulties)
+                print(f"  {order_str}")
+            else:
+                # Show first 20 and last 20
+                first_20 = " -> ".join(difficulties[:20])
+                last_20 = " -> ".join(difficulties[-20:])
+                print(f"  First 20: {first_20}")
+                print(f"  ... ({len(difficulties) - 40} more samples) ...")
+                print(f"  Last 20:  {last_20}")
+
+        print("="*70 + "\n")
 
     # -------------------------
     # EXECUTION EVAL INTERNALS

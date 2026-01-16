@@ -138,12 +138,12 @@ class ACE:
     def _setup_paths(self, save_dir: str, task_name: str, mode: str) -> Tuple[str, str]:
         """
         Setup logging paths and directories.
-        
+
         Args:
             save_dir: Base path for saving results
             task_name: task name
             mode: 'offline', 'online', or 'eval_only'
-            
+
         Returns:
             Tuple of (usage_log_path, playbook_dir)
         """
@@ -175,7 +175,7 @@ class ACE:
     ) -> Dict[str, Any]:
         """
         Main entrypoint for running ACE system in different modes.
-        
+
         Args:
             mode: Run mode - 'offline', 'online', or 'eval_only'
             train_samples: Training samples (required for offline mode)
@@ -183,28 +183,28 @@ class ACE:
             test_samples: Test samples (required for online and eval_only modes)
             data_processor: Data processor instance for the task
             config: Configuration dictionary
-            
+
         Returns:
             Dictionary with results depending on the mode
         """
         # Validate inputs
         if mode not in ['offline', 'online', 'eval_only']:
             raise ValueError(f"Invalid mode: {mode}. Must be 'offline', 'online', or 'eval_only'")
-        
+
         if mode == 'offline' and (train_samples is None or val_samples is None):
             raise ValueError("Offline mode requires train_samples and val_samples")
-        
+
         if mode == 'online' and test_samples is None:
             raise ValueError("Online mode requires test_samples")
-        
+
         if mode == 'eval_only' and test_samples is None:
             raise ValueError("eval_only mode requires test_samples")
-        
+
         # Extract configuration
         config_params = self._extract_config_params(config)
         task_name = config_params['task_name']
         save_dir = config_params['save_dir']
-        
+
         # Setup paths based on mode
         if mode == 'eval_only':
             save_path, log_dir = self._setup_paths(save_dir, task_name, mode)

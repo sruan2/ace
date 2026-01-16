@@ -19,7 +19,7 @@ class DataProcessor:
         bird_db_root: Optional[str] = None,
         exec_timeout_ms: int = 20000,
         exec_max_rows: int = 20000,
-        max_samples: int = 10,     # default cap
+        max_samples: int = 1000,     # default cap
         db_name: Optional[str] = None,  # filter by specific database name
     ):
         self.bird_db_root = bird_db_root

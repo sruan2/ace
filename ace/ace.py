@@ -10,6 +10,7 @@ This module coordinates three agents:
 
 import os
 import json
+import time
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -673,6 +674,7 @@ class ACE:
         results = []
         pre_train_post_train_results = []
         error_logs = []
+        step_timings = []
         best_accuracy = 0.0
         self.best_playbook = self.playbook
 
@@ -681,24 +683,25 @@ class ACE:
         print(f"Val samples: {len(val_samples)}")
         print(f"Curator frequency: every {curator_frequency} steps")
         print(f"Evaluation frequency: every {eval_steps} steps\n")
-        
+
         # Training loop
         for epoch in range(1, num_epochs + 1):
             print(f"\n{'='*60}")
             print(f"EPOCH {epoch}/{num_epochs}")
             print(f"{'='*60}")
-            
+
             epoch_answers_pre_train = []
             epoch_targets_pre_train = []
             epoch_answers_post_train = []
             epoch_targets_post_train = []
-            
+
             for step, task_dict in enumerate(train_samples):
                 step += 1
+                step_start_time = time.time()
                 print(f"\n--- Step {step}/{len(train_samples)} ---")
-                
+
                 target = task_dict.get("target", "")
-                
+
                 # Use helper method for training single sample
                 pre_train_answer, post_train_answer, tracking_dict = self._train_single_sample(
                     task_dict=task_dict,
@@ -711,18 +714,29 @@ class ACE:
                     config_params=config_params,
                     total_samples=len(train_samples)
                 )
-                
+
+                step_elapsed_time = time.time() - step_start_time
+                print(f"Step {step} completed in {step_elapsed_time:.2f} seconds")
+
+                # Track step timing
+                step_timings.append({
+                    "epoch": epoch,
+                    "step": step,
+                    "time_seconds": step_elapsed_time
+                })
+
                 # Collect answers for accuracy calculation
                 epoch_answers_pre_train.append(pre_train_answer)
                 epoch_targets_pre_train.append(target)
                 epoch_answers_post_train.append(post_train_answer)
                 epoch_targets_post_train.append(target)
-                
+
                 # Track pre-train and post-train results
                 pre_train_post_train_result = {
                     "epoch": epoch,
                     "step": step,
                     "target": target,
+                    "step_time_seconds": step_elapsed_time,
                     **tracking_dict
                 }
                 pre_train_post_train_results.append(pre_train_post_train_result)
@@ -812,25 +826,40 @@ class ACE:
                 "best_accuracy": best_accuracy,
                 "results": results,
             }, f, indent=2)
-        
+
         pre_train_post_train_results_path = os.path.join(save_path, "pre_train_post_train_results.json")
         with open(pre_train_post_train_results_path, "w") as f:
             json.dump(pre_train_post_train_results, f, indent=2)
-        
+
+        # Save step timings
+        step_timings_path = os.path.join(save_path, "step_timings.json")
+        total_training_time = sum(t["time_seconds"] for t in step_timings)
+        avg_step_time = total_training_time / len(step_timings) if step_timings else 0
+        with open(step_timings_path, "w") as f:
+            json.dump({
+                "step_timings": step_timings,
+                "total_training_time_seconds": total_training_time,
+                "total_training_time_minutes": total_training_time / 60,
+                "average_step_time_seconds": avg_step_time,
+                "total_steps": len(step_timings)
+            }, f, indent=2)
+
         # Save final playbook
         final_playbook_path = os.path.join(save_path, f"final_playbook.txt")
         with open(final_playbook_path, "w") as f:
             f.write(self.playbook)
-        
+
         # Save best playbook
         best_playbook_path = os.path.join(save_path, f"best_playbook.txt")
         with open(best_playbook_path, "w") as f:
             f.write(self.best_playbook)
-        
+
         print(f"\n{'='*60}")
         print(f"OFFLINE TRAINING COMPLETE")
         print(f"{'='*60}")
         print(f"Best Validation Accuracy: {best_accuracy:.3f}")
+        print(f"Total Training Time: {total_training_time/60:.2f} minutes ({total_training_time:.2f} seconds)")
+        print(f"Average Step Time: {avg_step_time:.2f} seconds")
         print(f"{'='*60}\n")
 
         return {"best_validation_accuracy": best_accuracy}
@@ -921,7 +950,8 @@ class ACE:
         # Initialize tracking
         train_results = []
         pre_train_post_train_results = []
-        
+        step_timings = []
+
         # Test tracking - accumulate across all windows
         correct_count_sample_based = 0
         correct_count = 0
@@ -1012,12 +1042,13 @@ class ACE:
             for local_step, task_dict in enumerate(window_samples):
                 global_step += 1
                 local_step += 1
-                
+                step_start_time = time.time()
+
                 print(f"\n--- Window {window_idx + 1}, Step {local_step}/{len(window_samples)} "
                       f"(Global step {global_step}) ---")
-                
+
                 target = task_dict.get("target", "")
-                
+
                 # Use helper method for training single sample
                 pre_train_answer, post_train_answer, tracking_dict = self._train_single_sample(
                     task_dict=task_dict,
@@ -1030,18 +1061,29 @@ class ACE:
                     config_params=config_params,
                     total_samples=len(test_samples)
                 )
-                
+
+                step_elapsed_time = time.time() - step_start_time
+                print(f"Step {global_step} completed in {step_elapsed_time:.2f} seconds")
+
+                # Track step timing
+                step_timings.append({
+                    "window": window_idx + 1,
+                    "global_step": global_step,
+                    "time_seconds": step_elapsed_time
+                })
+
                 # Collect answers for accuracy calculation
                 epoch_answers_pre_train.append(pre_train_answer)
                 epoch_targets_pre_train.append(target)
                 epoch_answers_post_train.append(post_train_answer)
                 epoch_targets_post_train.append(target)
-                
+
                 # Track pre-train and post-train results
                 pre_train_post_train_result = {
                     "window": window_idx + 1,
                     "global_step": global_step,
                     "target": target,
+                    "step_time_seconds": step_elapsed_time,
                     **tracking_dict
                 }
                 pre_train_post_train_results.append(pre_train_post_train_result)
@@ -1126,16 +1168,31 @@ class ACE:
         pre_train_post_train_results_path = os.path.join(save_path, "pre_train_post_train_results.json")
         with open(pre_train_post_train_results_path, "w") as f:
             json.dump(pre_train_post_train_results, f, indent=2)
-        
+
+        # Save step timings
+        step_timings_path = os.path.join(save_path, "step_timings.json")
+        total_training_time = sum(t["time_seconds"] for t in step_timings)
+        avg_step_time = total_training_time / len(step_timings) if step_timings else 0
+        with open(step_timings_path, "w") as f:
+            json.dump({
+                "step_timings": step_timings,
+                "total_training_time_seconds": total_training_time,
+                "total_training_time_minutes": total_training_time / 60,
+                "average_step_time_seconds": avg_step_time,
+                "total_steps": len(step_timings)
+            }, f, indent=2)
+
         # Save final playbook
         final_playbook_path = os.path.join(save_path, f"final_playbook.txt")
         with open(final_playbook_path, "w") as f:
             f.write(self.playbook)
-        
+
         print(f"\n{'='*60}")
         print(f"ONLINE TRAINING AND TESTING COMPLETE")
         print(f"{'='*60}")
         print(f"Final Test Accuracy: {final_test_accuracy:.3f}")
+        print(f"Total Training Time: {total_training_time/60:.2f} minutes ({total_training_time:.2f} seconds)")
+        print(f"Average Step Time: {avg_step_time:.2f} seconds")
         print(f"{'='*60}\n")
         
         return {

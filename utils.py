@@ -177,6 +177,7 @@ def evaluate_single_test_sample(args_tuple, data_processor) -> Tuple[Dict, str]:
         )
 
         final_answer = extract_answer(gen_response)
+        # print("============= calling data_processor answer_is_correct ===========")
         is_correct = data_processor.answer_is_correct(final_answer, target)
 
         return {

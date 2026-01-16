@@ -26,7 +26,6 @@ def preprocess_data(task_name, config, mode):
     """
     processor = DataProcessor(
         bird_db_root="stream-bench/data/bird/dev_databases",  # where dev_databases.zip is extracted
-        eval_mode="exec",           # "exact" or "exec"
         max_samples=100,              # default anyway
         db_name="financial"
     )

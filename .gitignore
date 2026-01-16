@@ -4,8 +4,6 @@
 __pycache__/
 */__pycache__/
 results/
-results-bird/
-results-cosql/
 
 # OS files
 .DS_Store

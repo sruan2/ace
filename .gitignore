@@ -13,8 +13,6 @@ env/
 
 # Results / outputs
 results/
-results-bird/
-results-cosql/
 
 # OS files
 .DS_Store

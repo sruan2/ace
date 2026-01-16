@@ -73,13 +73,17 @@ def preprocess_data(task_name, config, mode):
     # Get bird_db_root from config, with default
     bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
 
-    # Get db_name from config, with default
-    db_name = config.get("db_name", "financial")
+    # Get db_name from config, default to None (use mixed databases)
+    db_name = config.get("db_name", None)
+
+    # Get curriculum from config, default to None (no curriculum filtering)
+    curriculum = config.get("curriculum", None)
 
     processor = DataProcessor(
         bird_db_root=bird_db_root,
         max_samples=max_samples,
-        db_name=db_name
+        db_name=db_name,
+        curriculum=curriculum
     )
 
 
@@ -148,11 +152,23 @@ def main():
 
         task_config = data_config[args.task_name]
 
-        # Print max_samples if specified in config
+        # Print config settings
         if "max_samples" in task_config:
-            print(f"Max samples (from config): {task_config['max_samples']}\n")
+            print(f"Max samples (from config): {task_config['max_samples']}")
         else:
-            print(f"Max samples: No limit\n")
+            print(f"Max samples: No limit")
+
+        if "db_name" in task_config:
+            print(f"Database filter: {task_config['db_name']}")
+        else:
+            print(f"Database filter: None (using mixed databases)")
+
+        if "curriculum" in task_config:
+            print(f"Curriculum: {task_config['curriculum']}")
+        else:
+            print(f"Curriculum: None (no filtering)")
+
+        print()  # blank line
 
         train_samples, val_samples, test_samples, data_processor = preprocess_data(
             args.task_name,

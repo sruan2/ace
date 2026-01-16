@@ -6,7 +6,6 @@ import os
 import sys
 import json
 import time
-import shutil
 import matplotlib.pyplot as plt
 from .data_processor import DataProcessor
 
@@ -186,26 +185,18 @@ def main():
 
     args = parse_args()
 
-    # Create a timestamped log file in the save directory
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    temp_log_dir = os.path.join(args.save_path, "logs")
-    os.makedirs(temp_log_dir, exist_ok=True)
-    log_file_path = os.path.join(temp_log_dir, f"run_log_{timestamp}.txt")
+    # Print initial banner (before logger setup)
+    print(f"\n{'='*60}")
+    print(f"ACE SYSTEM - Stream Bench")
+    print(f"{'='*60}")
+    print(f"Task: {args.task_name}")
+    print(f"Mode: {args.mode.upper().replace('_', ' ')}")
+    print(f"Generator Model: {args.generator_model}")
+    print(f"Data Config: {args.data_config}")
+    print(f"{'='*60}\n")
 
-    # Set up the logger to capture all stdout
-    logger = TeeLogger(log_file_path)
-    sys.stdout = logger
-
+    logger = None
     try:
-        print(f"\n{'='*60}")
-        print(f"ACE SYSTEM - Stream Bench")
-        print(f"{'='*60}")
-        print(f"Task: {args.task_name}")
-        print(f"Mode: {args.mode.upper().replace('_', ' ')}")
-        print(f"Generator Model: {args.generator_model}")
-        print(f"Data Config: {args.data_config}")
-        print(f"Log file: {log_file_path}")
-        print(f"{'='*60}\n")
 
         # Load data configuration
         with open(args.data_config, 'r') as f:
@@ -292,6 +283,14 @@ def main():
         # Save preprocessed data to individual run folder
         run_save_path = results.get('save_path', args.save_path)
 
+        # Now set up logger to capture remaining output
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        log_file_path = os.path.join(run_save_path, f"terminal_output_{timestamp}.txt")
+        logger = TeeLogger(log_file_path)
+        sys.stdout = logger
+
+        print(f"Logging terminal output to: {log_file_path}\n")
+
         if train_samples is not None:
             train_path = os.path.join(run_save_path, "train_samples.json")
             with open(train_path, 'w') as f:
@@ -329,13 +328,10 @@ def main():
             print(f"{'='*60}\n")
             plot_online_performance(results, run_save_path, args.mode)
 
-        # Move log file to the actual run folder
-        final_log_path = os.path.join(run_save_path, f"terminal_output_{timestamp}.txt")
-        logger.close()
-        shutil.move(log_file_path, final_log_path)
-
-        # Print to original terminal
-        print(f"Terminal output saved to {final_log_path}")
+        # Close the logger
+        if logger:
+            logger.close()
+            print(f"Terminal output saved to {log_file_path}")
 
     except Exception as e:
         print(f"\n{'='*60}")

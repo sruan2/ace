@@ -108,18 +108,18 @@ class DataProcessor:
         print(f"Evaluating on DB: {db_name}")
         return self._exec_match(predicted, ground_truth, db_name)
 
-    def evaluate_accuracy(self, predictions, ground_truths):
+    def evaluate_accuracy(self, predictions, ground_truths, samples=None):
         """
-        Calculate accuracy using simple string comparison.
+        Calculate accuracy using execution-based evaluation.
 
-        NOTE: This is a fallback method. The actual execution-based evaluation
-        happens in answer_is_correct() during parallel test evaluation in utils.py.
-        This method is primarily used during training where we don't have per-sample
-        metadata, so we fall back to basic string comparison.
+        For parallel test evaluation: The actual correctness is determined by
+        answer_is_correct() in worker threads. This method re-evaluates using
+        sample metadata if available, or falls back to string comparison.
 
         Args:
             predictions: List of predicted SQL queries
             ground_truths: List of ground truth SQL queries
+            samples: Optional list of sample dicts with 'others' metadata
 
         Returns:
             float: Accuracy score (0.0 to 1.0)
@@ -130,10 +130,16 @@ class DataProcessor:
             return 0.0
 
         correct = 0
-        for p, g in zip(predictions, ground_truths):
-            # Simple string comparison fallback
-            if p.strip().lower() == g.strip().lower():
-                correct += 1
+        for i, (p, g) in enumerate(zip(predictions, ground_truths)):
+            # If we have sample metadata, use execution-based evaluation
+            if samples and i < len(samples):
+                sample_metadata = samples[i].get("others", None) if isinstance(samples[i], dict) else None
+                if self.answer_is_correct(p, g, sample_metadata):
+                    correct += 1
+            else:
+                # Fallback to string comparison for training (no metadata available)
+                if p.strip().lower() == g.strip().lower():
+                    correct += 1
 
         return correct / len(predictions)
 

@@ -24,6 +24,10 @@ def parse_args():
                         help="Path to data configuration JSON file")
     parser.add_argument("--plot", action="store_true",
                         help="Generate performance plot for online mode (shows accuracy vs steps)")
+    parser.add_argument("--db_name", type=str, default=None,
+                        help="Database name to filter data (optional, overrides config)")
+    parser.add_argument("--curriculum", type=str, default=None,
+                        help="Curriculum level to filter data (optional, overrides config)")
 
     return parser.parse_args()
 
@@ -52,7 +56,7 @@ class TeeLogger:
         self.log_file.close()
         
 
-def preprocess_data(task_name, config, mode):
+def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     """
     Load training and test data for the specified task.
 
@@ -60,6 +64,8 @@ def preprocess_data(task_name, config, mode):
         task_name: Name of the task
         config: Configuration dictionary with data paths and settings
         mode: Run mode ('offline', 'online', or 'eval_only')
+        db_name: Database name from command line args
+        curriculum: Curriculum from command line args
 
     Returns:
         Tuple of (train_samples, val_samples, test_samples, data_processor)
@@ -72,12 +78,6 @@ def preprocess_data(task_name, config, mode):
 
     # Get bird_db_root from config, with default
     bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
-
-    # Get db_name from config, default to None (use mixed databases)
-    db_name = config.get("db_name", None)
-
-    # Get curriculum from config, default to None (no curriculum filtering)
-    curriculum = config.get("curriculum", None)
 
     processor = DataProcessor(
         bird_db_root=bird_db_root,
@@ -158,13 +158,13 @@ def main():
         else:
             print(f"Max samples: No limit")
 
-        if "db_name" in task_config:
-            print(f"Database filter: {task_config['db_name']}")
+        if args.db_name:
+            print(f"Database filter: {args.db_name}")
         else:
             print(f"Database filter: None (using mixed databases)")
 
-        if "curriculum" in task_config:
-            print(f"Curriculum: {task_config['curriculum']}")
+        if args.curriculum:
+            print(f"Curriculum: {args.curriculum}")
         else:
             print(f"Curriculum: None (no filtering)")
 
@@ -173,7 +173,9 @@ def main():
         train_samples, val_samples, test_samples, data_processor = preprocess_data(
             args.task_name,
             task_config,
-            args.mode
+            args.mode,
+            db_name=args.db_name,
+            curriculum=args.curriculum
         )
 
         # Load initial playbook (or use empty if None provided)
@@ -217,7 +219,9 @@ def main():
             'use_bulletpoint_analyzer': args.use_bulletpoint_analyzer,
             'bulletpoint_analyzer_threshold': args.bulletpoint_analyzer_threshold,
             'api_provider': args.api_provider,
-            'config_name': config_filename
+            'config_name': config_filename,
+            'db_name': args.db_name,
+            'curriculum': args.curriculum
         }
 
         # Create a save hook to intercept when ACE creates the save path

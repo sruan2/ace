@@ -3,12 +3,38 @@
 Stream Bench task runner using ACE system.
 """
 import os
+import sys
 import json
 import time
+import shutil
 from .data_processor import DataProcessor
 
 from ace import ACE
 from finance.run import parse_args, load_initial_playbook, load_data
+
+
+class TeeLogger:
+    """Logger that writes to both terminal and file simultaneously with auto-flush."""
+
+    def __init__(self, log_file_path):
+        self.terminal = sys.stdout
+        self.log_file = open(log_file_path, 'w', buffering=1)  # Line buffering
+        self.log_file_path = log_file_path
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_file.write(message)
+        # Force flush to ensure immediate write
+        self.terminal.flush()
+        self.log_file.flush()
+
+    def flush(self):
+        self.terminal.flush()
+        self.log_file.flush()
+
+    def close(self):
+        sys.stdout = self.terminal
+        self.log_file.close()
 
 def preprocess_data(task_name, config, mode):
     """
@@ -74,120 +100,146 @@ def main():
 
     args = parse_args()
 
-    print(f"\n{'='*60}")
-    print(f"ACE SYSTEM - Stream Bench")
-    print(f"{'='*60}")
-    print(f"Task: {args.task_name}")
-    print(f"Mode: {args.mode.upper().replace('_', ' ')}")
-    print(f"Generator Model: {args.generator_model}")
-    print(f"{'='*60}\n")
+    # Create a timestamped log file in the save directory
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    temp_log_dir = os.path.join(args.save_path, "logs")
+    os.makedirs(temp_log_dir, exist_ok=True)
+    log_file_path = os.path.join(temp_log_dir, f"run_log_{timestamp}.txt")
 
-    # Load data
-    with open("./stream-bench/data/sample_config.json", 'r') as f:
-        task_config = json.load(f)
+    # Set up the logger to capture all stdout
+    logger = TeeLogger(log_file_path)
+    sys.stdout = logger
 
-    train_samples, val_samples, test_samples, data_processor = preprocess_data(
-        args.task_name,
-        task_config[args.task_name],
-        args.mode
-    )
+    try:
+        print(f"\n{'='*60}")
+        print(f"ACE SYSTEM - Stream Bench")
+        print(f"{'='*60}")
+        print(f"Task: {args.task_name}")
+        print(f"Mode: {args.mode.upper().replace('_', ' ')}")
+        print(f"Generator Model: {args.generator_model}")
+        print(f"Log file: {log_file_path}")
+        print(f"{'='*60}\n")
 
-    # Load initial playbook (or use empty if None provided)
-    initial_playbook = load_initial_playbook(args.initial_playbook_path)
-    if initial_playbook:
-        print(f"Loaded initial playbook from {args.initial_playbook_path}\n")
-    else:
-        print("Using empty playbook as initial playbook\n")
+        # Load data
+        with open("./stream-bench/data/sample_config.json", 'r') as f:
+            task_config = json.load(f)
 
-    # Create ACE system
-    ace_system = ACE(
-        api_provider=args.api_provider,
-        generator_model=args.generator_model,
-        reflector_model=args.reflector_model,
-        curator_model=args.curator_model,
-        max_tokens=args.max_tokens,
-        initial_playbook=initial_playbook,
-        use_bulletpoint_analyzer=args.use_bulletpoint_analyzer,
-        bulletpoint_analyzer_threshold=args.bulletpoint_analyzer_threshold
-    )
+        train_samples, val_samples, test_samples, data_processor = preprocess_data(
+            args.task_name,
+            task_config[args.task_name],
+            args.mode
+        )
 
-    # Prepare configuration
-    config = {
-        'num_epochs': args.num_epochs,
-        'max_num_rounds': args.max_num_rounds,
-        'curator_frequency': args.curator_frequency,
-        'eval_steps': args.eval_steps,
-        'online_eval_frequency': args.online_eval_frequency,
-        'save_steps': args.save_steps,
-        'playbook_token_budget': args.playbook_token_budget,
-        'task_name': args.task_name,
-        'mode': args.mode,
-        'json_mode': args.json_mode,
-        'no_ground_truth': args.no_ground_truth,
-        'save_dir': args.save_path,
-        'test_workers': args.test_workers,
-        'initial_playbook_path': args.initial_playbook_path,
-        'use_bulletpoint_analyzer': args.use_bulletpoint_analyzer,
-        'bulletpoint_analyzer_threshold': args.bulletpoint_analyzer_threshold,
-        'api_provider': args.api_provider
-    }
+        # Load initial playbook (or use empty if None provided)
+        initial_playbook = load_initial_playbook(args.initial_playbook_path)
+        if initial_playbook:
+            print(f"Loaded initial playbook from {args.initial_playbook_path}\n")
+        else:
+            print("Using empty playbook as initial playbook\n")
 
-    # Execute using the unified run method
-    print(f"Starting ACE run at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    run_start_time = time.time()
+        # Create ACE system
+        ace_system = ACE(
+            api_provider=args.api_provider,
+            generator_model=args.generator_model,
+            reflector_model=args.reflector_model,
+            curator_model=args.curator_model,
+            max_tokens=args.max_tokens,
+            initial_playbook=initial_playbook,
+            use_bulletpoint_analyzer=args.use_bulletpoint_analyzer,
+            bulletpoint_analyzer_threshold=args.bulletpoint_analyzer_threshold
+        )
 
-    results = ace_system.run(
-        mode=args.mode,
-        train_samples=train_samples,
-        val_samples=val_samples,
-        test_samples=test_samples,
-        data_processor=data_processor,
-        config=config
-    )
+        # Prepare configuration
+        config = {
+            'num_epochs': args.num_epochs,
+            'max_num_rounds': args.max_num_rounds,
+            'curator_frequency': args.curator_frequency,
+            'eval_steps': args.eval_steps,
+            'online_eval_frequency': args.online_eval_frequency,
+            'save_steps': args.save_steps,
+            'playbook_token_budget': args.playbook_token_budget,
+            'task_name': args.task_name,
+            'mode': args.mode,
+            'json_mode': args.json_mode,
+            'no_ground_truth': args.no_ground_truth,
+            'save_dir': args.save_path,
+            'test_workers': args.test_workers,
+            'initial_playbook_path': args.initial_playbook_path,
+            'use_bulletpoint_analyzer': args.use_bulletpoint_analyzer,
+            'bulletpoint_analyzer_threshold': args.bulletpoint_analyzer_threshold,
+            'api_provider': args.api_provider
+        }
 
-    run_elapsed_time = time.time() - run_start_time
-    print(f"\nACE run completed in {run_elapsed_time/60:.2f} minutes ({run_elapsed_time:.2f} seconds)")
+        # Execute using the unified run method
+        print(f"Starting ACE run at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        run_start_time = time.time()
 
-    # Save preprocessed data to individual run folder
-    run_save_path = results.get('save_path', args.save_path)
+        results = ace_system.run(
+            mode=args.mode,
+            train_samples=train_samples,
+            val_samples=val_samples,
+            test_samples=test_samples,
+            data_processor=data_processor,
+            config=config
+        )
 
-    if train_samples is not None:
-        train_path = os.path.join(run_save_path, "train_samples.json")
-        with open(train_path, 'w') as f:
-            json.dump(train_samples, f, indent=2)
-        print(f"Saved train samples to {train_path}")
+        run_elapsed_time = time.time() - run_start_time
+        print(f"\nACE run completed in {run_elapsed_time/60:.2f} minutes ({run_elapsed_time:.2f} seconds)")
 
-    if val_samples is not None:
-        val_path = os.path.join(run_save_path, "val_samples.json")
-        with open(val_path, 'w') as f:
-            json.dump(val_samples, f, indent=2)
-        print(f"Saved val samples to {val_path}")
+        # Save preprocessed data to individual run folder
+        run_save_path = results.get('save_path', args.save_path)
 
-    if test_samples is not None:
-        test_path = os.path.join(run_save_path, "test_samples.json")
-        with open(test_path, 'w') as f:
-            json.dump(test_samples, f, indent=2)
-        print(f"Saved test samples to {test_path}")
+        if train_samples is not None:
+            train_path = os.path.join(run_save_path, "train_samples.json")
+            with open(train_path, 'w') as f:
+                json.dump(train_samples, f, indent=2)
+            print(f"Saved train samples to {train_path}")
 
-    # Calculate and save total timing
-    total_elapsed_time = time.time() - total_start_time
+        if val_samples is not None:
+            val_path = os.path.join(run_save_path, "val_samples.json")
+            with open(val_path, 'w') as f:
+                json.dump(val_samples, f, indent=2)
+            print(f"Saved val samples to {val_path}")
 
-    print(f"Total time: {total_elapsed_time/60:.2f} minutes ({total_elapsed_time:.2f} seconds)")
+        if test_samples is not None:
+            test_path = os.path.join(run_save_path, "test_samples.json")
+            with open(test_path, 'w') as f:
+                json.dump(test_samples, f, indent=2)
+            print(f"Saved test samples to {test_path}")
 
-    # Save timing information to file
-    timing_info = {
-        'total_time_seconds': total_elapsed_time,
-        'total_time_minutes': total_elapsed_time / 60,
-        'run_time_seconds': run_elapsed_time,
-        'run_time_minutes': run_elapsed_time / 60,
-        'start_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(total_start_time)),
-        'end_time': time.strftime('%Y-%m-%d %H:%M:%S')
-    }
+        # Calculate and display total timing
+        total_elapsed_time = time.time() - total_start_time
 
-    timing_path = os.path.join(run_save_path, "timing_info.json")
-    with open(timing_path, 'w') as f:
-        json.dump(timing_info, f, indent=2)
-    print(f"Saved timing information to {timing_path}")
+        print(f"\n{'='*60}")
+        print(f"TOTAL EXECUTION TIME")
+        print(f"{'='*60}")
+        print(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(total_start_time))}")
+        print(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Total time: {total_elapsed_time/60:.2f} minutes ({total_elapsed_time:.2f} seconds)")
+        print(f"ACE run time: {run_elapsed_time/60:.2f} minutes ({run_elapsed_time:.2f} seconds)")
+        print(f"{'='*60}\n")
+
+        # Move log file to the actual run folder
+        final_log_path = os.path.join(run_save_path, f"terminal_output_{timestamp}.txt")
+        logger.close()
+        shutil.move(log_file_path, final_log_path)
+
+        # Print to original terminal
+        print(f"Terminal output saved to {final_log_path}")
+
+    except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"ERROR: An exception occurred")
+        print(f"{'='*60}")
+        print(f"{type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        raise
+    finally:
+        # Ensure logger is closed even if there's an error
+        if 'logger' in locals():
+            logger.close()
 
 
 if __name__ == "__main__":

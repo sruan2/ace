@@ -5,13 +5,12 @@ from typing import List, Dict, Any, Optional, Tuple
 
 class DataProcessor:
     """
-    BIRD-only DataProcessor with fixed public method signatures.
+    BIRD-only DataProcessor with thread-safe evaluation.
 
     Evaluation mode: execute predicted & gold on sqlite DB and compare result sets
 
-    IMPORTANT: Since we cannot pass per-sample metadata into answer_is_correct(),
-    we store db_name in self._db_names (aligned with processed samples) during process_task_data(),
-    and use an internal index while evaluating.
+    Thread-safety: db_name metadata flows through sample['others'] dict to enable
+    safe parallel evaluation across multiple workers.
     """
 
     def __init__(
@@ -28,12 +27,6 @@ class DataProcessor:
         self.max_samples = max_samples
         self.db_name = db_name
 
-        # Stored per-sample metadata from the last processed dataset
-        self._db_names: List[str] = []
-
-        # Internal cursor used during evaluation to align db_name with sample
-        self._eval_i: int = 0
-
     # -------------------------
     # REQUIRED SIGNATURES
     # -------------------------
@@ -43,10 +36,9 @@ class DataProcessor:
         Convert your BIRD JSONL rows into standardized format:
           [{"context": ..., "question": ..., "target": ..., "others": {...}}]
 
-        Also stores db_name list in self._db_names for exec evaluation.
+        db_name is stored in each sample's 'others' dict for thread-safe evaluation.
         """
         processed = []
-        db_names = []
 
         # Filter by db_name if specified
         if self.db_name is not None:
@@ -89,37 +81,48 @@ class DataProcessor:
                 }
             })
 
-            db_names.append(db_name)
-
-        # store for exec-mode evaluation
-        self._db_names = db_names
         return processed
 
-    def answer_is_correct(self, predicted, ground_truth):
+    def answer_is_correct(self, predicted, ground_truth, sample_metadata=None):
         """
         Compare predicted vs ground_truth using exec mode.
-        Uses internal self._eval_i to pick the db_name for exec-mode.
-        """
-        # get db_name for this sample (aligned with evaluation index)
-        db_name = ""
-        # print(self._db_names)
-        # print(self._eval_i)
-        if 0 <= self._eval_i < len(self._db_names):
-            db_name = self._db_names[self._eval_i]
 
-        print(f"Evaluating sample {self._eval_i} on DB: {db_name}")
+        Args:
+            predicted: Predicted SQL query
+            ground_truth: Ground truth SQL query
+            sample_metadata: Optional dict containing 'db_name' and other metadata
+
+        Returns:
+            bool: True if execution results match, False otherwise
+        """
+        # Extract db_name from metadata
+        db_name = ""
+        if sample_metadata:
+            db_name = sample_metadata.get("db_name", "")
 
         # If db_name not available, return False
         if not db_name:
-            print(f"Warning: No db_name available for sample {self._eval_i}")
+            print(f"Warning: No db_name available in sample metadata")
             return False
 
+        print(f"Evaluating on DB: {db_name}")
         return self._exec_match(predicted, ground_truth, db_name)
 
     def evaluate_accuracy(self, predictions, ground_truths):
         """
-        Calculate accuracy using answer_is_correct for each sample.
-        Keeps internal index in sync so exec-mode uses correct db_name.
+        Calculate accuracy using simple string comparison.
+
+        NOTE: This is a fallback method. The actual execution-based evaluation
+        happens in answer_is_correct() during parallel test evaluation in utils.py.
+        This method is primarily used during training where we don't have per-sample
+        metadata, so we fall back to basic string comparison.
+
+        Args:
+            predictions: List of predicted SQL queries
+            ground_truths: List of ground truth SQL queries
+
+        Returns:
+            float: Accuracy score (0.0 to 1.0)
         """
         if len(predictions) != len(ground_truths):
             raise ValueError("predictions and ground_truths must have the same length")
@@ -127,13 +130,11 @@ class DataProcessor:
             return 0.0
 
         correct = 0
-        for i, (p, g) in enumerate(zip(predictions, ground_truths)):
-            self._eval_i = i  # set current sample index for answer_is_correct()
-            if self.answer_is_correct(p, g):
+        for p, g in zip(predictions, ground_truths):
+            # Simple string comparison fallback
+            if p.strip().lower() == g.strip().lower():
                 correct += 1
 
-        # reset cursor
-        self._eval_i = 0
         return correct / len(predictions)
 
     # -------------------------
@@ -152,7 +153,7 @@ class DataProcessor:
             gold_res = self._run_sql(sqlite_path, gold_sql)
 
             # Print execution results
-            print(f"\n--- Execution Results (Sample {self._eval_i}) ---")
+            print(f"\n--- Execution Results ---")
             print(f"DB: {db_name}")
             print(f"\nPredicted SQL:\n{predicted_sql}")
             print(f"\nPredicted Result ({len(pred_res)} rows):")
@@ -170,7 +171,7 @@ class DataProcessor:
             print("-" * 50)
 
         except Exception as e:
-            print(f"\n--- Execution Error (Sample {self._eval_i}) ---")
+            print(f"\n--- Execution Error ---")
             print(f"DB: {db_name}")
             print(f"Error: {e}")
             print("-" * 50)

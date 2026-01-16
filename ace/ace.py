@@ -474,7 +474,8 @@ class ACE:
         
         # Extract answer and check correctness
         final_answer = extract_answer(gen_response)
-        is_correct = data_processor.answer_is_correct(final_answer, target)
+        sample_metadata = task_dict.get("others", None)
+        is_correct = data_processor.answer_is_correct(final_answer, target, sample_metadata)
         pre_train_answer = final_answer
         
         print(f"Correct: {is_correct}")
@@ -538,8 +539,8 @@ class ACE:
                 )
                 
                 final_answer = extract_answer(gen_response)
-                
-                if data_processor.answer_is_correct(final_answer, target):
+
+                if data_processor.answer_is_correct(final_answer, target, sample_metadata):
                     print(f"Corrected after reflection round {round_num + 1}!")
                     is_correct = True
                     break
@@ -618,8 +619,8 @@ class ACE:
         
         final_answer = extract_answer(gen_response)
         post_train_answer = final_answer
-        
-        post_train_is_correct = data_processor.answer_is_correct(final_answer, target)
+
+        post_train_is_correct = data_processor.answer_is_correct(final_answer, target, sample_metadata)
         tracking_dict["post_train_result"] = {
             "final_answer": final_answer,
             "is_correct": post_train_is_correct,

@@ -221,13 +221,14 @@ class DataProcessor:
         return accuracy
 
     
-    def evaluate_accuracy(self, out: List[str], target: List[str]) -> tuple:
+    def evaluate_accuracy(self, out: List[str], target: List[str], samples=None) -> tuple:
         """
         Dataset-specific accuracy evaluation.
 
         Args:
             out: List of model predictions
             target: List of ground truth targets
+            samples: Optional list of sample dicts (unused for finance tasks)
 
         Returns:
             tuple: (accuracy, response_list)

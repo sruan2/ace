@@ -266,7 +266,8 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
                 print(f"Progress: {i}/{len(args_list)}, Accuracy: {curr_acc:.3f}")
     
     if results["answers"] and results["targets"]:
-        accuracy = data_processor.evaluate_accuracy(results["answers"], results["targets"])
+        # Pass test_samples to evaluate_accuracy for execution-based evaluation with metadata
+        accuracy = data_processor.evaluate_accuracy(results["answers"], results["targets"], test_samples)
         
         final_results = {
             "accuracy": accuracy,

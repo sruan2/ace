@@ -228,42 +228,52 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
         "answers": [], "targets": [], "errors": []
     }
 
+    # Store results indexed by original sample position to preserve order
+    indexed_results = {}
+
     # Use a wrapper to pass data_processor to the evaluation function
     def eval_wrapper(args_tuple):
         return evaluate_single_test_sample(args_tuple, data_processor)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_args = {
-            executor.submit(eval_wrapper, args): args 
+            executor.submit(eval_wrapper, args): args
             for args in args_list
         }
 
         for i, future in enumerate(as_completed(future_to_args), 1):
             result, error = future.result()
-            
+
             if error:
                 print(error)
                 continue
 
             if result and result["success"]:
+                # Store result by its original index to preserve order
+                indexed_results[result["index"]] = result
+
                 results["correct"] += (1 if result["is_correct"] else 0)
                 results["total"] += 1
-                results["answers"].append(result["final_answer"])
-                results["targets"].append(result["target"])
-                
+
                 if not result["is_correct"]:
                     results["errors"].append({
                         "index": result["index"],
                         "prediction": result["final_answer"],
                         "ground_truth": result["target"]
                     })
-                
+
                 if result["final_answer"] == "No final answer found":
                     results["no_answer"] += 1
 
             if i % 50 == 0:
                 curr_acc = results["correct"] / results["total"] if results["total"] > 0 else 0
                 print(f"Progress: {i}/{len(args_list)}, Accuracy: {curr_acc:.3f}")
+
+    # Reconstruct answers and targets in original order
+    for idx in sorted(indexed_results.keys()):
+        result = indexed_results[idx]
+        results["answers"].append(result["final_answer"])
+        results["targets"].append(result["target"])
     
     if results["answers"] and results["targets"]:
         # Pass test_samples to evaluate_accuracy for execution-based evaluation with metadata

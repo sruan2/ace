@@ -21,33 +21,45 @@ class DataProcessor:
         exec_max_rows: int = 20000,
         max_samples: Optional[int] = None,  # None = use all samples
         db_name: Optional[str] = None,  # None = use mixed databases (no filter)
-        curriculum: Optional[str] = None,  # None = no curriculum filtering
+        difficulty_filter: Optional[str] = None,  # None = no difficulty filtering
+        curriculum: Optional[str] = None,  # None = no curriculum ordering
     ):
         """
         Initialize DataProcessor.
 
         Args:
-            curriculum: Strategy for selecting samples by difficulty. Options:
+            difficulty_filter: Strategy for selecting samples by difficulty (dataset-level). Options:
                 - None: No filtering, use all samples
                 - "simple-only": Only simple difficulty samples
                 - "moderate-only": Only moderate difficulty samples
                 - "challenging-only": Only challenging difficulty samples
                 - "balanced": Equal distribution (1/3 from each difficulty)
-                - "balanced-s2m2c": Balanced simple -> moderate -> challenging order
-                - "balanced-c2m2s": Balanced challenging -> moderate -> simple order
+            curriculum: Strategy for ordering samples (run-level). Options:
+                - None: No reordering (original order from dataset)
+                - "easy_to_hard": Easy -> Medium -> Challenging order
+                - "hard_to_easy": Challenging -> Medium -> Easy order
+                - "random": Random order (fixed seed)
         """
         self.bird_db_root = bird_db_root
         self.exec_timeout_ms = exec_timeout_ms
         self.exec_max_rows = exec_max_rows
         self.max_samples = max_samples
         self.db_name = db_name
+        self.difficulty_filter = difficulty_filter
         self.curriculum = curriculum
 
-        # Validate curriculum option
-        valid_curricula = [
-            None, "simple-only", "moderate-only", "challenging-only",
-            "balanced", "balanced-s2m2c", "balanced-c2m2s"
+        # Validate difficulty_filter option
+        valid_filters = [
+            None, "simple-only", "moderate-only", "challenging-only", "balanced"
         ]
+        if self.difficulty_filter not in valid_filters:
+            raise ValueError(
+                f"Invalid difficulty_filter '{self.difficulty_filter}'. "
+                f"Valid options: {[f for f in valid_filters if f is not None]}"
+            )
+
+        # Validate curriculum option
+        valid_curricula = [None, "easy_to_hard", "hard_to_easy", "random"]
         if self.curriculum not in valid_curricula:
             raise ValueError(
                 f"Invalid curriculum '{self.curriculum}'. "
@@ -75,22 +87,13 @@ class DataProcessor:
             ]
             print(f"After db_name filter ('{self.db_name}'): {len(raw_data)} samples")
 
-        # Step 2: Apply max_samples cap BEFORE curriculum
-        # This ensures curriculum works within the sample budget
-        if self.max_samples is not None:
-            if len(raw_data) < self.max_samples:
-                raise ValueError(
-                    f"Not enough samples after db_name filtering. "
-                    f"Required: {self.max_samples}, Available: {len(raw_data)}. "
-                    f"Please adjust max_samples or remove/change db_name filter."
-                )
-            # Don't cap yet - just validate we have enough
-            # Curriculum will handle the distribution within max_samples
+        # Step 2: Apply difficulty_filter for dataset-level selection
+        if self.difficulty_filter is not None:
+            raw_data = self._apply_difficulty_filter(raw_data)
 
-        # Step 3: Apply curriculum-based filtering and ordering
-        # Curriculum must respect max_samples constraint
+        # Step 3: Apply curriculum for run-level ordering
         if self.curriculum is not None:
-            raw_data = self._apply_curriculum(raw_data)
+            raw_data = self._apply_curriculum_ordering(raw_data)
 
         # Print summary of processed data
         self._print_data_summary(raw_data)
@@ -198,20 +201,20 @@ class DataProcessor:
         return correct / len(predictions)
 
     # -------------------------
-    # CURRICULUM LOGIC
+    # DIFFICULTY FILTER & CURRICULUM LOGIC
     # -------------------------
 
-    def _apply_curriculum(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _apply_difficulty_filter(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Apply curriculum-based filtering and ordering to raw data.
+        Apply difficulty-based filtering to select samples (dataset-level).
 
         Args:
             raw_data: List of raw data items with 'difficulty' field
 
         Returns:
-            Filtered and/or reordered list based on curriculum strategy
+            Filtered list based on difficulty_filter strategy
         """
-        if not self.curriculum:
+        if not self.difficulty_filter:
             return raw_data
 
         # Categorize samples by difficulty
@@ -231,20 +234,20 @@ class DataProcessor:
             else:
                 unknown_samples.append(item)
 
-        # Apply curriculum strategy
-        if self.curriculum == "simple-only":
+        # Apply difficulty filter strategy
+        if self.difficulty_filter == "simple-only":
             result = simple_samples
-            print(f"Curriculum 'simple-only': Selected {len(result)} simple samples")
+            print(f"Difficulty filter 'simple-only': Selected {len(result)} simple samples")
 
-        elif self.curriculum == "moderate-only":
+        elif self.difficulty_filter == "moderate-only":
             result = moderate_samples
-            print(f"Curriculum 'moderate-only': Selected {len(result)} moderate samples")
+            print(f"Difficulty filter 'moderate-only': Selected {len(result)} moderate samples")
 
-        elif self.curriculum == "challenging-only":
+        elif self.difficulty_filter == "challenging-only":
             result = challenging_samples
-            print(f"Curriculum 'challenging-only': Selected {len(result)} challenging samples")
+            print(f"Difficulty filter 'challenging-only': Selected {len(result)} challenging samples")
 
-        elif self.curriculum == "balanced":
+        elif self.difficulty_filter == "balanced":
             # Equal distribution from each difficulty (1/3 each)
             # If max_samples is set, distribute it equally across difficulties
             if self.max_samples is not None:
@@ -268,12 +271,13 @@ class DataProcessor:
                 if len(challenging_samples) == 0:
                     missing.append("challenging")
                 raise ValueError(
-                    f"Curriculum 'balanced' requires samples from all difficulty levels. "
+                    f"Difficulty filter 'balanced' requires samples from all difficulty levels. "
                     f"Missing difficulty levels: {', '.join(missing)}. "
                     f"Available: simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
                     f"challenging={len(challenging_samples)}"
                 )
 
+            # Combine samples without reordering (order depends on curriculum)
             result = (
                 simple_samples[:min_count] +
                 moderate_samples[:min_count] +
@@ -283,113 +287,15 @@ class DataProcessor:
             # Check if we can meet max_samples requirement
             if self.max_samples is not None and len(result) < self.max_samples:
                 raise ValueError(
-                    f"Cannot meet max_samples={self.max_samples} with curriculum 'balanced'. "
+                    f"Cannot meet max_samples={self.max_samples} with difficulty filter 'balanced'. "
                     f"Need {self.max_samples // 3} samples per difficulty, but only have: "
                     f"simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
                     f"challenging={len(challenging_samples)}. "
                     f"Can only provide {len(result)} samples ({min_count} of each difficulty)."
                 )
 
-            print(f"Curriculum 'balanced': Selected {min_count} from each difficulty "
+            print(f"Difficulty filter 'balanced': Selected {min_count} from each difficulty "
                   f"(total: {len(result)} samples)")
-
-        elif self.curriculum == "balanced-s2m2c":
-            # Balanced: simple -> moderate -> challenging
-            # If max_samples is set, distribute it equally across difficulties
-            if self.max_samples is not None:
-                target_per_difficulty = self.max_samples // 3
-                min_count = min(
-                    len(simple_samples),
-                    len(moderate_samples),
-                    len(challenging_samples),
-                    target_per_difficulty
-                )
-            else:
-                min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
-
-            # Check if we have samples from all difficulty levels
-            if min_count == 0:
-                missing = []
-                if len(simple_samples) == 0:
-                    missing.append("simple")
-                if len(moderate_samples) == 0:
-                    missing.append("moderate")
-                if len(challenging_samples) == 0:
-                    missing.append("challenging")
-                raise ValueError(
-                    f"Curriculum 'balanced-s2m2c' requires samples from all difficulty levels. "
-                    f"Missing difficulty levels: {', '.join(missing)}. "
-                    f"Available: simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
-                    f"challenging={len(challenging_samples)}"
-                )
-
-            result = (
-                simple_samples[:min_count] +
-                moderate_samples[:min_count] +
-                challenging_samples[:min_count]
-            )
-
-            # Check if we can meet max_samples requirement
-            if self.max_samples is not None and len(result) < self.max_samples:
-                raise ValueError(
-                    f"Cannot meet max_samples={self.max_samples} with curriculum 'balanced-s2m2c'. "
-                    f"Need {self.max_samples // 3} samples per difficulty, but only have: "
-                    f"simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
-                    f"challenging={len(challenging_samples)}. "
-                    f"Can only provide {len(result)} samples ({min_count} of each difficulty)."
-                )
-
-            print(f"Curriculum 'balanced-s2m2c': {min_count} simple -> {min_count} moderate -> "
-                  f"{min_count} challenging (total: {len(result)} samples)")
-
-        elif self.curriculum == "balanced-c2m2s":
-            # Balanced: challenging -> moderate -> simple
-            # If max_samples is set, distribute it equally across difficulties
-            if self.max_samples is not None:
-                target_per_difficulty = self.max_samples // 3
-                min_count = min(
-                    len(simple_samples),
-                    len(moderate_samples),
-                    len(challenging_samples),
-                    target_per_difficulty
-                )
-            else:
-                min_count = min(len(simple_samples), len(moderate_samples), len(challenging_samples))
-
-            # Check if we have samples from all difficulty levels
-            if min_count == 0:
-                missing = []
-                if len(simple_samples) == 0:
-                    missing.append("simple")
-                if len(moderate_samples) == 0:
-                    missing.append("moderate")
-                if len(challenging_samples) == 0:
-                    missing.append("challenging")
-                raise ValueError(
-                    f"Curriculum 'balanced-c2m2s' requires samples from all difficulty levels. "
-                    f"Missing difficulty levels: {', '.join(missing)}. "
-                    f"Available: simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
-                    f"challenging={len(challenging_samples)}"
-                )
-
-            result = (
-                challenging_samples[:min_count] +
-                moderate_samples[:min_count] +
-                simple_samples[:min_count]
-            )
-
-            # Check if we can meet max_samples requirement
-            if self.max_samples is not None and len(result) < self.max_samples:
-                raise ValueError(
-                    f"Cannot meet max_samples={self.max_samples} with curriculum 'balanced-c2m2s'. "
-                    f"Need {self.max_samples // 3} samples per difficulty, but only have: "
-                    f"simple={len(simple_samples)}, moderate={len(moderate_samples)}, "
-                    f"challenging={len(challenging_samples)}. "
-                    f"Can only provide {len(result)} samples ({min_count} of each difficulty)."
-                )
-
-            print(f"Curriculum 'balanced-c2m2s': {min_count} challenging -> {min_count} moderate -> "
-                  f"{min_count} simple (total: {len(result)} samples)")
 
         else:
             # Should not reach here due to validation in __init__
@@ -397,6 +303,63 @@ class DataProcessor:
 
         if unknown_samples:
             print(f"Warning: {len(unknown_samples)} samples with unknown difficulty were excluded")
+
+        return result
+
+    def _apply_curriculum_ordering(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Apply curriculum-based ordering to samples (run-level).
+
+        Args:
+            raw_data: List of raw data items with 'difficulty' field
+
+        Returns:
+            Reordered list based on curriculum strategy
+        """
+        if not self.curriculum:
+            return raw_data
+
+        # Categorize samples by difficulty
+        simple_samples = []
+        moderate_samples = []
+        challenging_samples = []
+        unknown_samples = []
+
+        for item in raw_data:
+            difficulty = (item.get("difficulty") or "").lower()
+            if difficulty == "simple":
+                simple_samples.append(item)
+            elif difficulty == "moderate":
+                moderate_samples.append(item)
+            elif difficulty == "challenging":
+                challenging_samples.append(item)
+            else:
+                unknown_samples.append(item)
+
+        # Apply curriculum ordering
+        if self.curriculum == "easy_to_hard":
+            # Easy -> Medium -> Challenging
+            result = simple_samples + moderate_samples + challenging_samples + unknown_samples
+            print(f"Curriculum 'easy_to_hard': Ordered {len(simple_samples)} simple -> "
+                  f"{len(moderate_samples)} moderate -> {len(challenging_samples)} challenging")
+
+        elif self.curriculum == "hard_to_easy":
+            # Challenging -> Medium -> Easy
+            result = challenging_samples + moderate_samples + simple_samples + unknown_samples
+            print(f"Curriculum 'hard_to_easy': Ordered {len(challenging_samples)} challenging -> "
+                  f"{len(moderate_samples)} moderate -> {len(simple_samples)} simple")
+
+        elif self.curriculum == "random":
+            # Random order with fixed seed
+            import random
+            result = raw_data.copy()
+            random.seed(42)  # Fixed seed for reproducibility
+            random.shuffle(result)
+            print(f"Curriculum 'random': Randomly shuffled {len(result)} samples (seed=42)")
+
+        else:
+            # Should not reach here due to validation in __init__
+            result = raw_data
 
         return result
 
@@ -425,11 +388,17 @@ class DataProcessor:
                 db_names.add(db)
             print(f"Database filter: None (using {len(db_names)} databases: {', '.join(sorted(db_names))})")
 
-        # Curriculum
-        if self.curriculum:
-            print(f"Curriculum: {self.curriculum}")
+        # Difficulty filter (dataset-level)
+        if self.difficulty_filter:
+            print(f"Difficulty filter (dataset-level): {self.difficulty_filter}")
         else:
-            print("Curriculum: None")
+            print("Difficulty filter: None")
+
+        # Curriculum (run-level ordering)
+        if self.curriculum:
+            print(f"Curriculum ordering (run-level): {self.curriculum}")
+        else:
+            print("Curriculum ordering: None (original order)")
 
         # Difficulty distribution
         from collections import Counter

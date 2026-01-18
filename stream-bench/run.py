@@ -27,8 +27,8 @@ def parse_args():
                         help="Generate performance plot for online mode (shows accuracy vs steps)")
     parser.add_argument("--db_name", type=str, default=None,
                         help="Database name to filter data (optional, overrides config)")
-    parser.add_argument("--curriculum", type=str, default=None,
-                        help="Curriculum level to filter data (optional, overrides config)")
+    parser.add_argument("--curriculum", type=str, default=None, choices=["easy_to_hard", "hard_to_easy", "random"],
+                        help="Curriculum ordering strategy: easy_to_hard, hard_to_easy, random")
 
     return parser.parse_args()
 
@@ -66,7 +66,7 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         config: Configuration dictionary with data paths and settings
         mode: Run mode ('offline', 'online', or 'eval_only')
         db_name: Database name from command line args
-        curriculum: Curriculum from command line args
+        curriculum: Curriculum ordering from command line args
 
     Returns:
         Tuple of (train_samples, val_samples, test_samples, data_processor)
@@ -80,10 +80,14 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     # Get bird_db_root from config, with default
     bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
 
+    # Get difficulty_filter from config (dataset-level selection)
+    difficulty_filter = config.get("difficulty_filter", None)
+
     processor = DataProcessor(
         bird_db_root=bird_db_root,
         max_samples=max_samples,
         db_name=db_name,
+        difficulty_filter=difficulty_filter,
         curriculum=curriculum
     )
 
@@ -174,10 +178,15 @@ def main():
         else:
             print(f"Database filter: None (using mixed databases)")
 
-        if args.curriculum:
-            print(f"Curriculum: {args.curriculum}")
+        if "difficulty_filter" in task_config:
+            print(f"Difficulty filter (from config): {task_config['difficulty_filter']}")
         else:
-            print(f"Curriculum: None (no filtering)")
+            print(f"Difficulty filter: None (no filtering)")
+
+        if args.curriculum:
+            print(f"Curriculum ordering: {args.curriculum}")
+        else:
+            print(f"Curriculum ordering: None (original order)")
 
         print()  # blank line
 

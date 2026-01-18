@@ -36,9 +36,9 @@ def parse_args():
 class TeeLogger:
     """Logger that writes to both terminal and file simultaneously with auto-flush."""
 
-    def __init__(self, log_file_path):
+    def __init__(self, log_file_path, mode='w'):
         self.terminal = sys.stdout
-        self.log_file = open(log_file_path, 'w', buffering=1)  # Line buffering
+        self.log_file = open(log_file_path, mode, buffering=1)  # Line buffering
         self.log_file_path = log_file_path
 
     def write(self, message):
@@ -326,8 +326,8 @@ def main():
         import shutil
         shutil.move(temp_log_path, final_log_path)
 
-        # Reopen logger with final path to continue logging
-        logger = TeeLogger(final_log_path)
+        # Reopen logger with final path in APPEND mode to continue logging
+        logger = TeeLogger(final_log_path, mode='a')
         sys.stdout = logger
 
         print(f"\nMoved terminal output log to: {final_log_path}")

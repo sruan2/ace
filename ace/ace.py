@@ -274,7 +274,7 @@ class ACE:
                     prefix="initial"
                 )
                 results['initial_test_results'] = initial_test_results
-                print(f"Initial Test Accuracy: {initial_test_results['accuracy']:.3f}\n")
+                print(f"Initial Test Accuracy: {initial_test_results['accuracy']:.3f} ({initial_test_results['correct']}/{initial_test_results['total']})\n")
             
             # 2. Run offline training
             print(f"\n{'='*60}")
@@ -307,7 +307,7 @@ class ACE:
                     prefix="final"
                 )
                 results['final_test_results'] = final_test_results
-                print(f"Final Test Accuracy: {final_test_results['accuracy']:.3f}\n")
+                print(f"Final Test Accuracy: {final_test_results['accuracy']:.3f} ({final_test_results['correct']}/{final_test_results['total']})\n")
         
         elif mode == 'online':
             # ONLINE MODE WORKFLOW
@@ -325,7 +325,7 @@ class ACE:
                 prefix="initial"
             )
             results['initial_test_results'] = initial_test_results
-            print(f"Initial Test Accuracy: {initial_test_results['accuracy']:.3f}\n")
+            print(f"Initial Test Accuracy: {initial_test_results['accuracy']:.3f} ({initial_test_results['correct']}/{initial_test_results['total']})\n")
             
             # 2. Run online training and testing
             print(f"\n{'='*60}")
@@ -371,13 +371,13 @@ class ACE:
         if mode == 'offline':
             print(f"Best Validation Accuracy: {results['training_results']['best_validation_accuracy']:.3f}")
             if test_samples:
-                print(f"Initial Test Accuracy: {results['initial_test_results']['accuracy']:.3f}")
-                print(f"Final Test Accuracy: {results['final_test_results']['accuracy']:.3f}")
+                print(f"Initial Test Accuracy: {results['initial_test_results']['accuracy']:.3f} ({results['initial_test_results']['correct']}/{results['initial_test_results']['total']})")
+                print(f"Final Test Accuracy: {results['final_test_results']['accuracy']:.3f} ({results['final_test_results']['correct']}/{results['final_test_results']['total']})")
         elif mode == 'online':
-            print(f"Initial Test Accuracy: {results['initial_test_results']['accuracy']:.3f}")
-            print(f"Final Test Accuracy: {results['online_test_results']['accuracy']:.3f}")
+            print(f"Initial Test Accuracy: {results['initial_test_results']['accuracy']:.3f} ({results['initial_test_results']['correct']}/{results['initial_test_results']['total']})")
+            print(f"Final Test Accuracy: {results['online_test_results']['accuracy']:.3f} ({results['online_test_results']['correct']}/{results['online_test_results']['total']})")
         else:  # eval_only
-            print(f"Test Accuracy: {results['test_results']['accuracy']:.3f}")
+            print(f"Test Accuracy: {results['test_results']['accuracy']:.3f} ({results['test_results']['correct']}/{results['test_results']['total']})")
         print(f"Results saved to: {save_path}")
         print(f"{'='*60}\n")
 
@@ -1185,7 +1185,7 @@ class ACE:
         print(f"\n{'='*60}")
         print(f"ONLINE TRAINING AND TESTING COMPLETE")
         print(f"{'='*60}")
-        print(f"Final Test Accuracy: {final_test_accuracy:.3f}")
+        print(f"Final Test Accuracy: {final_test_accuracy:.3f} ({correct_count}/{total_count})")
         print(f"Total Training Time: {total_training_time/60:.2f} minutes ({total_training_time:.2f} seconds)")
         print(f"Average Step Time: {avg_step_time:.2f} seconds")
         print(f"{'='*60}\n")

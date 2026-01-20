@@ -131,7 +131,7 @@ class DataProcessor:
 
         return processed
 
-    def answer_is_correct(self, predicted, ground_truth, sample_metadata=None):
+    def answer_is_correct(self, predicted, ground_truth, sample_metadata=None, return_exec_results=False):
         """
         Compare predicted vs ground_truth using exec mode.
 
@@ -139,9 +139,16 @@ class DataProcessor:
             predicted: Predicted SQL query
             ground_truth: Ground truth SQL query
             sample_metadata: Optional dict containing 'db_name' and other metadata
+            return_exec_results: If True, return tuple of (is_correct, exec_results_dict)
 
         Returns:
             bool: True if execution results match, False otherwise
+            OR
+            tuple: (bool, dict) if return_exec_results=True, where dict contains:
+                - 'predicted_result': List of tuples from predicted SQL execution
+                - 'ground_truth_result': List of tuples from ground truth SQL execution
+                - 'db_name': Database name used for evaluation
+                - 'error': Error message if execution failed
         """
         # Extract db_name from metadata
         db_name = ""
@@ -151,6 +158,8 @@ class DataProcessor:
         # If db_name not available, return False
         if not db_name:
             print(f"Warning: No db_name available in sample metadata")
+            if return_exec_results:
+                return False, {"error": "No db_name available in sample metadata", "db_name": ""}
             return False
 
         print(f"\n[EVAL START] Evaluating on DB: {db_name}")
@@ -158,11 +167,15 @@ class DataProcessor:
         print(f"[EVAL START] Ground truth SQL: {ground_truth[:200]}...")
 
         try:
-            result = self._exec_match(predicted, ground_truth, db_name)
+            result, exec_results = self._exec_match(predicted, ground_truth, db_name, return_exec_results=return_exec_results)
             print(f"[EVAL DONE] Result: {result}")
+            if return_exec_results:
+                return result, exec_results
             return result
         except Exception as e:
             print(f"[EVAL ERROR] Exception during evaluation: {e}")
+            if return_exec_results:
+                return False, {"error": str(e), "db_name": db_name}
             return False
 
     def evaluate_accuracy(self, predictions, ground_truths, samples=None):
@@ -437,12 +450,14 @@ class DataProcessor:
     # EXECUTION EVAL INTERNALS
     # -------------------------
 
-    def _exec_match(self, predicted_sql: str, gold_sql: str, db_name: str) -> bool:
+    def _exec_match(self, predicted_sql: str, gold_sql: str, db_name: str, return_exec_results: bool = False):
         sqlite_path = self._find_sqlite_path(db_name)
         if not sqlite_path:
             # DB not found -> fall back to exact
             print(f"SQLite DB for {db_name} not found under {self.bird_db_root}. Falling back to exact match.")
-            return False
+            if return_exec_results:
+                return False, {"error": f"SQLite DB for {db_name} not found", "db_name": db_name}
+            return False, {}
 
         try:
             print(f"[EXEC] Running PREDICTED SQL on {db_name}")
@@ -472,14 +487,24 @@ class DataProcessor:
             print(f"[EXEC] Normalizing and comparing results...")
             match = self._normalize_result(pred_res) == self._normalize_result(gold_res)
             print(f"[EXEC] Match result: {match}")
-            return match
+
+            if return_exec_results:
+                exec_results = {
+                    "predicted_result": pred_res,
+                    "ground_truth_result": gold_res,
+                    "db_name": db_name
+                }
+                return match, exec_results
+            return match, {}
 
         except Exception as e:
             print(f"\n--- Execution Error ---")
             print(f"DB: {db_name}")
             print(f"Error: {e}")
             print("-" * 50)
-            return False
+            if return_exec_results:
+                return False, {"error": str(e), "db_name": db_name}
+            return False, {}
 
     def _find_sqlite_path(self, db_name: str) -> Optional[str]:
         """

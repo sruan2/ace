@@ -75,6 +75,10 @@ def get_base_parser(description='ACE System'):
     parser.add_argument("--bulletpoint_analyzer_threshold", type=float, default=0.90,
                         help="Similarity threshold for bulletpoint analyzer (0-1, default: 0.90)")
 
+    # SQL evaluation configuration
+    parser.add_argument("--pass_sql_eval_results", action="store_true",
+                        help="Pass SQL execution results to reflector for better error analysis")
+
     # Output configuration
     parser.add_argument("--save_path", type=str, required=True,
                         help="Directory to save results")
@@ -229,6 +233,7 @@ def main():
         'initial_playbook_path': args.initial_playbook_path,
         'use_bulletpoint_analyzer': args.use_bulletpoint_analyzer,
         'bulletpoint_analyzer_threshold': args.bulletpoint_analyzer_threshold,
+        'pass_sql_eval_results': args.pass_sql_eval_results,
         'api_provider': args.api_provider
     }
 

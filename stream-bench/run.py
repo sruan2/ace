@@ -238,6 +238,7 @@ def main():
             'initial_playbook_path': args.initial_playbook_path,
             'use_bulletpoint_analyzer': args.use_bulletpoint_analyzer,
             'bulletpoint_analyzer_threshold': args.bulletpoint_analyzer_threshold,
+            'pass_sql_eval_results': args.pass_sql_eval_results,
             'api_provider': args.api_provider,
             'config_name': config_filename,
             'db_name': args.db_name,

@@ -112,10 +112,10 @@ class ACE:
     def _extract_config_params(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Extract common configuration parameters.
-        
+
         Args:
             config: Configuration dictionary
-            
+
         Returns:
             Dictionary with extracted parameters
         """
@@ -132,7 +132,8 @@ class ACE:
             'save_dir': config.get('save_dir', './results'),
             'test_workers': config.get('test_workers', 20),
             'use_bulletpoint_analyzer': config.get('use_bulletpoint_analyzer', False),
-            'bulletpoint_analyzer_threshold': config.get('bulletpoint_analyzer_threshold', 0.90)
+            'bulletpoint_analyzer_threshold': config.get('bulletpoint_analyzer_threshold', 0.90),
+            'pass_sql_eval_results': config.get('pass_sql_eval_results', False)
         }
     
     def _setup_paths(self, save_dir: str, task_name: str, mode: str, db_name: str = None, curriculum: str = None) -> Tuple[str, str]:
@@ -491,15 +492,25 @@ class ACE:
         # Extract answer and check correctness
         final_answer = extract_answer(gen_response)
         sample_metadata = task_dict.get("others", None)
-        is_correct = data_processor.answer_is_correct(final_answer, target, sample_metadata)
+
+        # Get SQL evaluation results if flag is enabled
+        pass_sql_eval_results = config_params.get('pass_sql_eval_results', False)
+        if pass_sql_eval_results:
+            is_correct, sql_exec_results = data_processor.answer_is_correct(
+                final_answer, target, sample_metadata, return_exec_results=True
+            )
+        else:
+            is_correct = data_processor.answer_is_correct(final_answer, target, sample_metadata)
+            sql_exec_results = None
+
         pre_train_answer = final_answer
-        
+
         print(f"Correct: {is_correct}")
-        
+
         # Log bullet usage
         log_bullet_usage(usage_log_path, epoch, step, task_dict, bullet_ids,
                        playbook=self.playbook, is_correct=is_correct)
-        
+
         # Track pre-train result
         tracking_dict = {
             "pre_train_result": {
@@ -509,20 +520,20 @@ class ACE:
                 "playbook_length": len(self.playbook)
             }
         }
-        
+
         reflection_content = "(empty)"
-        
+
         # STEP 2: Reflection and regeneration
         if not is_correct:
             # For incorrect answers - iterate reflection rounds
             for round_num in range(max_num_rounds):
                 print(f"Reflection round {round_num + 1}/{max_num_rounds}")
-                
+
                 # Get bullets for reflector
                 playbook_bullets = extract_playbook_bullets(
                     self.playbook, bullet_ids
                 )
-                
+
                 # Reflect on error
                 reflection_content, bullet_tags, _ = self.reflector.reflect(
                     question=question,
@@ -534,7 +545,8 @@ class ACE:
                     use_ground_truth=not no_ground_truth,
                     use_json_mode=use_json_mode,
                     call_id=f"{step_id}_round_{round_num}",
-                    log_dir=log_dir
+                    log_dir=log_dir,
+                    sql_exec_results=sql_exec_results if pass_sql_eval_results else None
                 )
                 
                 # Update bullet counts
@@ -566,7 +578,7 @@ class ACE:
             playbook_bullets = extract_playbook_bullets(
                 self.playbook, bullet_ids
             )
-            
+
             reflection_content, bullet_tags, _ = self.reflector.reflect(
                 question=question,
                 reasoning_trace=gen_response,
@@ -577,7 +589,8 @@ class ACE:
                 use_ground_truth=not no_ground_truth,
                 use_json_mode=use_json_mode,
                 call_id=f"{step_id}_reflect_on_correct",
-                log_dir=log_dir
+                log_dir=log_dir,
+                sql_exec_results=sql_exec_results if pass_sql_eval_results else None
             )
             
             # Update bullet counts

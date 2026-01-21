@@ -345,7 +345,8 @@ def main():
 
     # Save detailed results if requested
     if args.output_file:
-        output_path = args.output_file
+        # Save output file under the results_dir directory
+        output_path = os.path.join(args.results_dir, args.output_file)
 
         # Warn if file already exists
         if os.path.exists(output_path):
@@ -353,7 +354,9 @@ def main():
 
         try:
             # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
 
             with open(output_path, 'w') as f:
                 json.dump({

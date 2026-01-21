@@ -76,7 +76,7 @@ def generate_predictions_parallel(
     samples: List[Dict[str, Any]],
     playbook: str,
     num_workers: int = 4
-) -> List[str]:
+) -> tuple[List[str], Dict[str, Any]]:
     """
     Generate predictions for all samples using the playbook in parallel.
 
@@ -87,12 +87,15 @@ def generate_predictions_parallel(
         num_workers: Number of parallel workers
 
     Returns:
-        List of predicted SQL queries
+        Tuple of (predictions, error_stats)
+        - predictions: List of predicted SQL queries
+        - error_stats: Dictionary with error statistics
     """
     predictions = [None] * len(samples)
+    error_info = []  # Track detailed error information
 
     def process_sample(idx: int, sample: Dict[str, Any]) -> tuple:
-        """Process a single sample and return (idx, prediction)."""
+        """Process a single sample and return (idx, prediction, error_type)."""
         try:
             context = sample['context']
             question = sample['question']
@@ -109,11 +112,40 @@ def generate_predictions_parallel(
             # Extract SQL from response
             predicted_sql = extract_sql_from_response(response)
 
-            return idx, predicted_sql
+            # Check if this was an error response from timed_llm_call
+            error_type = None
+            if "INCORRECT_DUE_TO_EMPTY_RESPONSE" in predicted_sql:
+                error_type = "empty_response"
+            elif "INCORRECT_DUE_TO_INVALID_PROMPT" in predicted_sql:
+                error_type = "invalid_prompt"
+            elif call_info.get('error'):
+                # Check for context length exceeded
+                error_msg = call_info.get('error', '')
+                if 'context_length_exceeded' in error_msg or 'tokens exceed' in error_msg:
+                    error_type = "context_length_exceeded"
+                else:
+                    error_type = "api_error"
+
+            return idx, predicted_sql, error_type
         except Exception as e:
-            print(f"Error processing sample {idx}: {e}")
+            error_str = str(e)
+            print(f"Error processing sample {idx}: {error_str}")
+
+            # Classify error type
+            error_type = "unknown_error"
+            if 'context_length_exceeded' in error_str or 'tokens exceed' in error_str:
+                error_type = "context_length_exceeded"
+            elif 'timeout' in error_str.lower() or 'timed out' in error_str.lower():
+                error_type = "timeout"
+            elif 'rate limit' in error_str.lower() or '429' in error_str:
+                error_type = "rate_limit"
+            elif '400' in error_str or 'invalid_prompt' in error_str.lower():
+                error_type = "client_error"
+            elif '500' in error_str or 'server error' in error_str.lower():
+                error_type = "server_error"
+
             # Return a placeholder SQL that will fail evaluation
-            return idx, "SELECT 1"
+            return idx, "SELECT 1", error_type
 
     print(f"\nGenerating predictions with {num_workers} workers...")
 
@@ -127,14 +159,40 @@ def generate_predictions_parallel(
         # Collect results as they complete
         completed = 0
         for future in as_completed(futures):
-            idx, prediction = future.result()
+            idx, prediction, error_type = future.result()
             predictions[idx] = prediction
+
+            if error_type:
+                error_info.append({
+                    'sample_idx': idx,
+                    'error_type': error_type,
+                    'question': samples[idx].get('question', '')[:100]  # First 100 chars
+                })
+
             completed += 1
 
             if completed % 10 == 0 or completed == len(samples):
                 print(f"  Progress: {completed}/{len(samples)} samples completed")
 
-    return predictions
+    # Generate error statistics
+    error_stats = {
+        'total_errors': len(error_info),
+        'error_breakdown': {},
+        'error_details': error_info
+    }
+
+    # Count errors by type
+    for error in error_info:
+        error_type = error['error_type']
+        error_stats['error_breakdown'][error_type] = error_stats['error_breakdown'].get(error_type, 0) + 1
+
+    if error_info:
+        print(f"\n⚠️  Warning: {len(error_info)} samples failed during generation")
+        print("Error breakdown:")
+        for error_type, count in sorted(error_stats['error_breakdown'].items(), key=lambda x: x[1], reverse=True):
+            print(f"  - {error_type}: {count}")
+
+    return predictions, error_stats
 
 
 def evaluate_test_samples(
@@ -326,7 +384,7 @@ def main():
     generator = Generator(generator_client, args.api_provider, args.generator_model, max_tokens=4096)
 
     # Generate predictions
-    predictions = generate_predictions_parallel(
+    predictions, error_stats = generate_predictions_parallel(
         generator, samples, playbook, num_workers=args.num_workers
     )
 
@@ -342,6 +400,9 @@ def main():
     print(f"Total samples evaluated: {eval_results['total_samples']}")
     print(f"Correct: {eval_results['correct']}")
     print(f"Accuracy: {eval_results['accuracy']:.2%}")
+    if error_stats['total_errors'] > 0:
+        print(f"API errors during generation: {error_stats['total_errors']}")
+        print(f"  (These samples were marked as incorrect)")
     print("="*70)
 
     # Save detailed results if requested
@@ -366,6 +427,9 @@ def main():
                     'accuracy': eval_results['accuracy'],
                     'total_samples': eval_results['total_samples'],
                     'correct': eval_results['correct'],
+                    'api_errors': error_stats['total_errors'],
+                    'error_breakdown': error_stats['error_breakdown'],
+                    'error_details': error_stats['error_details'],
                     'results': eval_results['results']
                 }, f, indent=2)
             print(f"\nDetailed results saved to: {output_path}")

@@ -106,6 +106,7 @@ def generate_predictions_parallel(
                 question=question,
                 playbook=playbook,
                 context=context,
+                reflection="(empty)",  # Explicitly pass empty reflection to minimize tokens
                 use_json_mode=True  # Use JSON mode to get structured response
             )
 

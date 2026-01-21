@@ -37,89 +37,6 @@ def load_playbook(playbook_path: str) -> str:
         return f.read()
 
 
-def load_processed_data(results_dir: str) -> List[Dict[str, Any]]:
-    """
-    Load processed data from bullet_usage_log.jsonl.
-
-    Returns list of samples with context, question, target, and metadata.
-    """
-    log_file = os.path.join(results_dir, "bullet_usage_log.jsonl")
-
-    if not os.path.exists(log_file):
-        raise FileNotFoundError(f"No bullet_usage_log.jsonl found in {results_dir}")
-
-    samples = []
-    seen_questions = set()
-
-    with open(log_file, 'r') as f:
-        for line in f:
-            if line.strip():
-                entry = json.loads(line)
-
-                # Extract question to deduplicate (same question appears multiple times during training)
-                question = entry.get('sample_question', '')
-
-                # Skip duplicates - only keep first occurrence
-                if question in seen_questions:
-                    continue
-                seen_questions.add(question)
-
-                # Parse the context to extract db_schema and other info
-                context_raw = entry.get('sample_context', '')
-
-                # Extract database schema and other metadata
-                # The context format is standardized in data_processor.py
-                samples.append({
-                    'context': context_raw,
-                    'question': question,
-                    'target': None,  # We don't have ground truth in the log
-                    'others': {
-                        'db_name': extract_db_name_from_context(context_raw),
-                        'question_id': entry.get('sample_id'),
-                    }
-                })
-
-    print(f"Loaded {len(samples)} unique samples from {log_file}")
-    return samples
-
-
-def extract_db_name_from_context(context: str) -> str:
-    """
-    Extract database name from context string.
-
-    The context contains db_schema as a dictionary string.
-    We need to parse it to get db_id.
-    """
-    try:
-        # Look for db_id in the context
-        if "'db_id':" in context:
-            start = context.index("'db_id':") + len("'db_id':")
-            # Find the next quote
-            start = context.index("'", start) + 1
-            end = context.index("'", start)
-            return context[start:end]
-    except:
-        pass
-    return ""
-
-
-def load_bird_dev_data(bird_jsonl_path: str) -> List[Dict[str, Any]]:
-    """
-    Load BIRD dev data from JSONL file.
-
-    This provides ground truth SQL for evaluation.
-    """
-    if not os.path.exists(bird_jsonl_path):
-        raise FileNotFoundError(f"BIRD dev JSONL not found: {bird_jsonl_path}")
-
-    samples = []
-    with open(bird_jsonl_path, 'r') as f:
-        for line in f:
-            if line.strip():
-                samples.append(json.loads(line))
-
-    print(f"Loaded {len(samples)} samples from BIRD dev data")
-    return samples
 
 
 def extract_sql_from_response(response: str) -> str:
@@ -220,55 +137,35 @@ def generate_predictions_parallel(
     return predictions
 
 
-def evaluate_with_data_processor(
+def evaluate_test_samples(
     predictions: List[str],
-    bird_data: List[Dict[str, Any]],
-    samples: List[Dict[str, Any]],
+    test_samples: List[Dict[str, Any]],
     bird_db_root: str
 ) -> Dict[str, Any]:
     """
-    Evaluate predictions using DataProcessor's execution-based evaluation.
+    Evaluate predictions using test_samples.json (which already has ground truth).
 
     Args:
         predictions: List of predicted SQL queries
-        bird_data: List of BIRD data items with ground truth SQL
-        samples: List of samples (for matching questions)
+        test_samples: List of test samples with ground truth SQL
         bird_db_root: Path to BIRD database root
 
     Returns:
         Dictionary with evaluation results
     """
-    # Create a mapping from question to ground truth SQL
-    question_to_gt = {}
-    question_to_db = {}
-    for item in bird_data:
-        q = item.get('question', '')
-        question_to_gt[q] = item.get('sql', '') or item.get('SQL', '')
-        question_to_db[q] = item.get('db_name', '') or item.get('db_id', '')
+    print(f"\n" + "="*70)
+    print("EVALUATING ON TEST SAMPLES")
+    print("="*70)
+    print(f"Total test samples: {len(test_samples)}")
+    print("="*70)
 
-    # Match predictions with ground truth
-    matched_predictions = []
-    matched_ground_truths = []
-    matched_metadata = []
-
-    for i, sample in enumerate(samples):
-        question = sample['question']
-        if question in question_to_gt:
-            matched_predictions.append(predictions[i])
-            matched_ground_truths.append(question_to_gt[question])
-            matched_metadata.append({
-                'db_name': question_to_db[question],
-                'question': question
-            })
-
-    print(f"\nMatched {len(matched_predictions)} samples with ground truth")
-
-    if len(matched_predictions) == 0:
+    if len(predictions) != len(test_samples):
+        print(f"\nError: Mismatch between predictions ({len(predictions)}) and samples ({len(test_samples)})")
         return {
             'accuracy': 0.0,
             'total_samples': 0,
             'correct': 0,
-            'error': 'No samples matched with ground truth'
+            'error': 'Prediction count mismatch'
         }
 
     # Initialize DataProcessor for evaluation
@@ -279,16 +176,19 @@ def evaluate_with_data_processor(
     results = []
 
     print("\nEvaluating predictions...")
-    for i, (pred, gt, meta) in enumerate(zip(matched_predictions, matched_ground_truths, matched_metadata)):
+    for i, (pred, sample) in enumerate(zip(predictions, test_samples)):
         try:
+            gt = sample['target']
+            meta = sample.get('others', {})
+
             is_correct = data_processor.answer_is_correct(pred, gt, meta)
 
             if is_correct:
                 correct += 1
 
             results.append({
-                'question': meta['question'],
-                'db_name': meta['db_name'],
+                'question': sample['question'],
+                'db_name': meta.get('db_name', ''),
                 'predicted_sql': pred,
                 'ground_truth_sql': gt,
                 'is_correct': is_correct
@@ -296,25 +196,27 @@ def evaluate_with_data_processor(
         except Exception as e:
             print(f"  Error evaluating sample {i}: {e}")
             results.append({
-                'question': meta['question'],
-                'db_name': meta['db_name'],
+                'question': sample.get('question', ''),
+                'db_name': sample.get('others', {}).get('db_name', ''),
                 'predicted_sql': pred,
-                'ground_truth_sql': gt,
+                'ground_truth_sql': sample.get('target', ''),
                 'is_correct': False,
                 'error': str(e)
             })
 
-        if (i + 1) % 10 == 0 or (i + 1) == len(matched_predictions):
-            print(f"  Progress: {i + 1}/{len(matched_predictions)} samples evaluated (correct: {correct})")
+        if (i + 1) % 10 == 0 or (i + 1) == len(test_samples):
+            print(f"  Progress: {i + 1}/{len(test_samples)} samples evaluated (correct: {correct})")
 
-    accuracy = correct / len(matched_predictions)
+    accuracy = correct / len(test_samples) if len(test_samples) > 0 else 0.0
 
     return {
         'accuracy': accuracy,
-        'total_samples': len(matched_predictions),
+        'total_samples': len(test_samples),
         'correct': correct,
         'results': results
     }
+
+
 
 
 def load_run_config(results_dir: str) -> Dict[str, Any]:
@@ -343,16 +245,10 @@ def main():
         help='Name of playbook file in intermediate_playbooks folder (e.g., window_4_final_playbook.txt)'
     )
     parser.add_argument(
-        '--bird_dev_jsonl',
-        type=str,
-        default='stream-bench/data/streambench_bird_test.jsonl',
-        help='Path to BIRD dev JSONL file with ground truth'
-    )
-    parser.add_argument(
         '--bird_db_root',
         type=str,
         default='stream-bench/data/bird/dev_databases',
-        help='Path to BIRD database root directory'
+        help='Path to BIRD database root directory (for SQL execution during evaluation)'
     )
     parser.add_argument(
         '--api_provider',
@@ -429,13 +325,19 @@ def main():
     playbook = load_playbook(playbook_path)
     print(f"Playbook loaded ({len(playbook)} characters)")
 
-    # Load processed data
-    print(f"\nLoading processed data from: {args.results_dir}")
-    samples = load_processed_data(args.results_dir)
+    # Load test samples from processed_data (has everything we need)
+    test_samples_path = os.path.join(args.results_dir, 'processed_data', 'test_samples.json')
 
-    # Load BIRD dev data for ground truth
-    print(f"\nLoading BIRD dev data from: {args.bird_dev_jsonl}")
-    bird_data = load_bird_dev_data(args.bird_dev_jsonl)
+    if not os.path.exists(test_samples_path):
+        print(f"\nError: Test samples file not found: {test_samples_path}")
+        print("This file should be created during the ACE training run.")
+        return 1
+
+    print(f"\nLoading test samples from: {test_samples_path}")
+    print("  (This file contains the test data with ground truth SQL)")
+    with open(test_samples_path, 'r') as f:
+        samples = json.load(f)
+    print(f"  Loaded {len(samples)} test samples")
 
     # Initialize generator
     print(f"\nInitializing generator with {args.api_provider} API...")
@@ -449,9 +351,7 @@ def main():
 
     # Evaluate
     print(f"\nEvaluating predictions using execution-based evaluation...")
-    eval_results = evaluate_with_data_processor(
-        predictions, bird_data, samples, args.bird_db_root
-    )
+    eval_results = evaluate_test_samples(predictions, samples, args.bird_db_root)
 
     # Print results
     print("\n" + "="*70)

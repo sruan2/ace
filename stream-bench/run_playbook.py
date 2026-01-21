@@ -264,18 +264,6 @@ def main():
         help='Model name for generator (defaults to generator_model from run_config.json)'
     )
     parser.add_argument(
-        '--reflector_model',
-        type=str,
-        default=None,
-        help='Model name for reflector (defaults to reflector_model from run_config.json)'
-    )
-    parser.add_argument(
-        '--curator_model',
-        type=str,
-        default=None,
-        help='Model name for curator (defaults to curator_model from run_config.json)'
-    )
-    parser.add_argument(
         '--num_workers',
         type=int,
         default=4,
@@ -311,14 +299,6 @@ def main():
     if args.generator_model is None:
         args.generator_model = run_config.get('generator_model', 'DeepSeek-V3.1')
         print(f"Using generator_model from run_config.json: {args.generator_model}")
-
-    if args.reflector_model is None:
-        args.reflector_model = run_config.get('reflector_model', args.generator_model)
-        print(f"Using reflector_model from run_config.json: {args.reflector_model}")
-
-    if args.curator_model is None:
-        args.curator_model = run_config.get('curator_model', args.generator_model)
-        print(f"Using curator_model from run_config.json: {args.curator_model}")
 
     # Load playbook
     print(f"\nLoading playbook from: {playbook_path}")

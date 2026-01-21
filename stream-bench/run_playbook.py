@@ -242,7 +242,7 @@ def main():
         '--playbook_file',
         type=str,
         required=True,
-        help='Name of playbook file in intermediate_playbooks folder (e.g., window_4_final_playbook.txt)'
+        help='Playbook file path relative to results_dir (e.g., intermediate_playbooks/window_4_final_playbook.txt)'
     )
     parser.add_argument(
         '--bird_db_root',
@@ -283,7 +283,8 @@ def main():
         print(f"Error: Results directory not found: {args.results_dir}")
         return 1
 
-    playbook_path = os.path.join(args.results_dir, 'intermediate_playbooks', args.playbook_file)
+    # Join playbook_file with results_dir
+    playbook_path = os.path.join(args.results_dir, args.playbook_file)
     if not os.path.exists(playbook_path):
         print(f"Error: Playbook file not found: {playbook_path}")
         return 1

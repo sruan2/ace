@@ -22,6 +22,18 @@ class ErrorAnalyzer:
         self.window_accuracies = {}  # Track window accuracies {window_num: accuracy}
         self.cumulative_accuracies = {}  # Track cumulative test accuracies {window_num: cumulative_acc}
         self.cumulative_samples = {}  # Track cumulative sample counts {window_num: total_samples}
+        self.window_sizes = {}  # Track window sizes {window_num: num_samples}
+        self.default_window_size = None  # Default window size if not specified per window
+
+        # Track component-specific errors (generator, reflector, curator)
+        self.component_errors = defaultdict(lambda: defaultdict(list))  # {phase: {component: [errors]}}
+
+        # Track which problems/samples have errors
+        self.problem_errors = defaultdict(set)  # {phase: set of (window, sample_idx/call_id)}
+
+        # Track current sample being processed
+        self.current_sample_idx = None
+        self.current_call_id = None
 
     def classify_error(self, error_line: str, details: str = "") -> str:
         """Classify the type of error based on the error message."""
@@ -63,8 +75,40 @@ class ErrorAnalyzer:
         # Unknown errors
         return "unknown_error"
 
+    def extract_component(self, line: str) -> str:
+        """Extract the component name (GENERATOR, REFLECTOR, CURATOR) from the log line."""
+        if '[GENERATOR]' in line:
+            return 'GENERATOR'
+        elif '[REFLECTOR]' in line:
+            return 'REFLECTOR'
+        elif '[CURATOR]' in line:
+            return 'CURATOR'
+        return 'UNKNOWN'
+
+    def extract_base_sample_id(self, call_id: str) -> str:
+        """Extract base sample ID from call ID.
+
+        Examples:
+            'online_train_s_1455_round_2' -> '1455'
+            'online_train_s_1320_post_curate' -> '1320'
+            'gen_call_1' -> 'gen_call_1'
+            '123' -> '123'
+        """
+        # Try to match patterns like "s_1455_round_2" or "s_1320_post_curate"
+        match = re.search(r's_(\d+)(?:_round_\d+|_post_curate|_pre_curate)?', call_id)
+        if match:
+            return match.group(1)
+
+        # If no pattern match, return the original (might be sample_idx)
+        return call_id
+
     def detect_phase(self, line: str) -> None:
         """Detect whether we're in the initial or final test accuracy calculation phase."""
+        # Track window size (appears early in logs as "Window size: N")
+        window_size_match = re.search(r'Window size:\s*(\d+)', line, re.IGNORECASE)
+        if window_size_match:
+            self.default_window_size = int(window_size_match.group(1))
+
         # Track window numbers - these set the context for what window we're in
         window_match = re.search(r'WINDOW (\d+)', line, re.IGNORECASE)
         if window_match:
@@ -74,6 +118,23 @@ class ErrorAnalyzer:
         testing_window_match = re.search(r'Testing window (\d+)', line, re.IGNORECASE)
         if testing_window_match:
             self.current_window = int(testing_window_match.group(1))
+
+        # Track window step counts like "Window 1, Step 5/15"
+        window_step_match = re.search(r'Window\s+(\d+),\s+Step\s+\d+/(\d+)', line, re.IGNORECASE)
+        if window_step_match:
+            window_num = int(window_step_match.group(1))
+            window_size = int(window_step_match.group(2))
+            self.window_sizes[window_num] = window_size
+
+        # Track sample indices and call IDs
+        sample_match = re.search(r'sample[_ ]?(?:idx|index|#)?[:\s]+(\d+)', line, re.IGNORECASE)
+        if sample_match:
+            self.current_sample_idx = int(sample_match.group(1))
+
+        # Track call IDs from component logs like "[GENERATOR] Call XXX"
+        call_match = re.search(r'\[(GENERATOR|REFLECTOR|CURATOR)\]\s+Call\s+([A-Za-z0-9_-]+)', line)
+        if call_match:
+            self.current_call_id = call_match.group(2)
 
         # Track window accuracy: "Window X test accuracy: Y.YYY"
         # This pattern appears after testing each window and tells us which window completed
@@ -126,18 +187,28 @@ class ErrorAnalyzer:
             self.detect_phase(line)
 
             # Look for error indicators
-            if "⚠️" in line and ("error" in line.lower() or "Error" in line):
+            # Match both ⚠️ errors and "failed after" errors
+            is_warning_error = "⚠️" in line and ("error" in line.lower() or "Error" in line)
+            is_failed_error = "failed after" in line and ("Error" in line or "error" in line)
+
+            if is_warning_error or is_failed_error:
                 # Extract error details from the current line
                 error_msg = line
+
+                # Extract component that caused the error
+                component = self.extract_component(error_msg)
 
                 # Look ahead for [GENERATOR] Error details on the next line(s)
                 details = ""
                 j = i + 1
                 while j < len(lines) and j < i + 5:  # Look ahead up to 5 lines
                     next_line = lines[j].strip()
-                    if "[GENERATOR] Error details:" in next_line or "Error code:" in next_line:
+                    if "[GENERATOR] Error details:" in next_line or "[REFLECTOR] Error details:" in next_line or "[CURATOR] Error details:" in next_line or "Error code:" in next_line:
                         details += " " + next_line
                         j += 1
+                        # Also extract component from error details if not found yet
+                        if component == 'UNKNOWN':
+                            component = self.extract_component(next_line)
                     elif next_line and not next_line.startswith("["):
                         # Continuation of error details
                         details += " " + next_line
@@ -148,13 +219,27 @@ class ErrorAnalyzer:
                 # Classify the error
                 error_type = self.classify_error(error_msg, details)
 
+                # Determine phase for tracking
+                phase = self.current_phase if self.current_phase else "initial"
+
                 # Store in appropriate phase
                 error_entry = {
                     'line_num': i + 1,
                     'message': error_msg,
                     'details': details.strip(),
-                    'window': self.current_window
+                    'window': self.current_window,
+                    'component': component,
+                    'sample_idx': self.current_sample_idx,
+                    'call_id': self.current_call_id
                 }
+
+                # Track which problems have errors
+                problem_key = (self.current_window, self.current_sample_idx or self.current_call_id)
+                if problem_key[1] is not None:  # Only track if we have a sample/call identifier
+                    self.problem_errors[phase].add(problem_key)
+
+                # Store in component-specific tracking
+                self.component_errors[phase][component].append(error_entry)
 
                 if self.current_phase == "final":
                     self.final_errors[error_type].append(error_entry)
@@ -165,6 +250,76 @@ class ErrorAnalyzer:
                     self.initial_errors[error_type].append(error_entry)
 
             i += 1
+
+    def print_component_analysis(self, phase: str, phase_name: str) -> None:
+        """Print component-specific error analysis for a given phase."""
+        component_stats = self.component_errors.get(phase, {})
+        if not component_stats:
+            return
+
+        print(f"\nComponent breakdown:")
+        total_component_errors = sum(len(errors) for errors in component_stats.values())
+
+        for component in ['GENERATOR', 'REFLECTOR', 'CURATOR', 'UNKNOWN']:
+            errors = component_stats.get(component, [])
+            if errors:
+                percentage = (len(errors) / total_component_errors * 100) if total_component_errors > 0 else 0
+                print(f"  • {component}: {len(errors)} errors ({percentage:.1f}%)")
+
+                # Count unique problems for this component
+                unique_problems = set()
+                for error in errors:
+                    problem_key = (error['window'], error['sample_idx'] or error['call_id'])
+                    if problem_key[1] is not None:
+                        unique_problems.add(problem_key)
+
+                if unique_problems:
+                    avg_errors_per_problem = len(errors) / len(unique_problems)
+                    print(f"    - Unique problems affected: {len(unique_problems)}")
+                    print(f"    - Average errors per problem: {avg_errors_per_problem:.1f}")
+
+    def print_problem_analysis(self, phase: str, phase_name: str) -> None:
+        """Print analysis of which problems were affected by errors."""
+        problems = self.problem_errors.get(phase, set())
+        if not problems:
+            return
+
+        print(f"\nProblems with errors:")
+        print(f"  • Total unique problems affected: {len(problems)}")
+
+        # Count errors per problem
+        problem_error_counts = defaultdict(int)
+        all_errors = []
+
+        # Gather all errors for this phase
+        if phase == "initial":
+            for errors in self.initial_errors.values():
+                all_errors.extend(errors)
+        elif phase == "final":
+            for errors in self.final_errors.values():
+                all_errors.extend(errors)
+        elif phase == "between":
+            for errors in self.between_errors.values():
+                all_errors.extend(errors)
+
+        for error in all_errors:
+            problem_key = (error['window'], error['sample_idx'] or error['call_id'])
+            if problem_key[1] is not None:
+                problem_error_counts[problem_key] += 1
+
+        if problem_error_counts:
+            # Find problems with multiple errors
+            multiple_errors = {k: v for k, v in problem_error_counts.items() if v > 1}
+            if multiple_errors:
+                print(f"  • Problems with multiple errors: {len(multiple_errors)}")
+                print(f"    - Max errors for single problem: {max(multiple_errors.values())}")
+                print(f"    - Average errors per problem (for problems with >1 error): {sum(multiple_errors.values()) / len(multiple_errors):.1f}")
+
+                # Show top 5 problems with most errors
+                top_problems = sorted(multiple_errors.items(), key=lambda x: x[1], reverse=True)[:5]
+                print(f"    - Top problems by error count:")
+                for (window, identifier), count in top_problems:
+                    print(f"      * Window {window}, Sample/Call {identifier}: {count} errors")
 
     def print_report(self, debug=False) -> None:
         """Print a formatted report of the error analysis."""
@@ -195,12 +350,28 @@ class ErrorAnalyzer:
             for error_type, errors in sorted(self.initial_errors.items()):
                 print(f"  • {error_type}: {len(errors)}")
 
+            # Show component analysis
+            self.print_component_analysis("initial", "INITIAL TEST ACC")
+
+            # Show problem analysis
+            self.print_problem_analysis("initial", "INITIAL TEST ACC")
+
             # Show window distribution
             window_counts = defaultdict(int)
+            window_problems = defaultdict(set)  # Track unique API calls per window
+            window_base_samples = defaultdict(set)  # Track unique base sample IDs per window
             for errors in self.initial_errors.values():
                 for error in errors:
                     if error['window']:
                         window_counts[error['window']] += 1
+                        # Track unique API calls
+                        problem_id = error['sample_idx'] or error['call_id']
+                        if problem_id is not None:
+                            window_problems[error['window']].add(problem_id)
+                            # Extract base sample ID (e.g., "1455" from "online_train_s_1455_round_2")
+                            base_sample = self.extract_base_sample_id(str(problem_id))
+                            if base_sample:
+                                window_base_samples[error['window']].add(base_sample)
             if window_counts:
                 print("\nErrors by window:")
                 for window in sorted(window_counts.keys()):
@@ -210,7 +381,18 @@ class ErrorAnalyzer:
                         acc_info = f" (cumulative acc: {self.cumulative_accuracies[window]:.3f}{samples_info})"
                     elif window in self.window_accuracies:
                         acc_info = f" (window acc: {self.window_accuracies[window]:.3f})"
-                    print(f"  • Window {window}: {window_counts[window]} errors{acc_info}")
+
+                    unique_calls = len(window_problems[window])
+                    unique_samples = len(window_base_samples[window])
+                    # Get window size (total problems in window)
+                    window_size = self.window_sizes.get(window, self.default_window_size)
+                    if window_size and unique_samples > 0:
+                        problems_info = f", {unique_samples}/{window_size} problems ({unique_calls} unique API calls)"
+                    elif unique_samples > 0:
+                        problems_info = f", {unique_samples} problems ({unique_calls} unique API calls)"
+                    else:
+                        problems_info = ""
+                    print(f"  • Window {window}: {window_counts[window]} errors{problems_info}{acc_info}")
         print()
 
         # Final test acc errors
@@ -225,12 +407,28 @@ class ErrorAnalyzer:
             for error_type, errors in sorted(self.final_errors.items()):
                 print(f"  • {error_type}: {len(errors)}")
 
+            # Show component analysis
+            self.print_component_analysis("final", "FINAL TEST ACC")
+
+            # Show problem analysis
+            self.print_problem_analysis("final", "FINAL TEST ACC")
+
             # Show window distribution
             window_counts = defaultdict(int)
+            window_problems = defaultdict(set)  # Track unique API calls per window
+            window_base_samples = defaultdict(set)  # Track unique base sample IDs per window
             for errors in self.final_errors.values():
                 for error in errors:
                     if error['window']:
                         window_counts[error['window']] += 1
+                        # Track unique API calls
+                        problem_id = error['sample_idx'] or error['call_id']
+                        if problem_id is not None:
+                            window_problems[error['window']].add(problem_id)
+                            # Extract base sample ID (e.g., "1455" from "online_train_s_1455_round_2")
+                            base_sample = self.extract_base_sample_id(str(problem_id))
+                            if base_sample:
+                                window_base_samples[error['window']].add(base_sample)
             if window_counts:
                 print("\nErrors by window:")
                 for window in sorted(window_counts.keys()):
@@ -240,7 +438,18 @@ class ErrorAnalyzer:
                         acc_info = f" (cumulative acc: {self.cumulative_accuracies[window]:.3f}{samples_info})"
                     elif window in self.window_accuracies:
                         acc_info = f" (window acc: {self.window_accuracies[window]:.3f})"
-                    print(f"  • Window {window}: {window_counts[window]} errors{acc_info}")
+
+                    unique_calls = len(window_problems[window])
+                    unique_samples = len(window_base_samples[window])
+                    # Get window size (total problems in window)
+                    window_size = self.window_sizes.get(window, self.default_window_size)
+                    if window_size and unique_samples > 0:
+                        problems_info = f", {unique_samples}/{window_size} problems ({unique_calls} unique API calls)"
+                    elif unique_samples > 0:
+                        problems_info = f", {unique_samples} problems ({unique_calls} unique API calls)"
+                    else:
+                        problems_info = ""
+                    print(f"  • Window {window}: {window_counts[window]} errors{problems_info}{acc_info}")
         print()
 
         # Between phase errors
@@ -254,12 +463,28 @@ class ErrorAnalyzer:
             for error_type, errors in sorted(self.between_errors.items()):
                 print(f"  • {error_type}: {len(errors)}")
 
+            # Show component analysis
+            self.print_component_analysis("between", "BETWEEN PHASES")
+
+            # Show problem analysis
+            self.print_problem_analysis("between", "BETWEEN PHASES")
+
             # Show window distribution
             window_counts = defaultdict(int)
+            window_problems = defaultdict(set)  # Track unique API calls per window
+            window_base_samples = defaultdict(set)  # Track unique base sample IDs per window
             for errors in self.between_errors.values():
                 for error in errors:
                     if error['window']:
                         window_counts[error['window']] += 1
+                        # Track unique API calls
+                        problem_id = error['sample_idx'] or error['call_id']
+                        if problem_id is not None:
+                            window_problems[error['window']].add(problem_id)
+                            # Extract base sample ID (e.g., "1455" from "online_train_s_1455_round_2")
+                            base_sample = self.extract_base_sample_id(str(problem_id))
+                            if base_sample:
+                                window_base_samples[error['window']].add(base_sample)
             if window_counts:
                 print("\nErrors by window:")
                 for window in sorted(window_counts.keys()):
@@ -269,7 +494,18 @@ class ErrorAnalyzer:
                         acc_info = f" (cumulative acc: {self.cumulative_accuracies[window]:.3f}{samples_info})"
                     elif window in self.window_accuracies:
                         acc_info = f" (window acc: {self.window_accuracies[window]:.3f})"
-                    print(f"  • Window {window}: {window_counts[window]} errors{acc_info}")
+
+                    unique_calls = len(window_problems[window])
+                    unique_samples = len(window_base_samples[window])
+                    # Get window size (total problems in window)
+                    window_size = self.window_sizes.get(window, self.default_window_size)
+                    if window_size and unique_samples > 0:
+                        problems_info = f", {unique_samples}/{window_size} problems ({unique_calls} unique API calls)"
+                    elif unique_samples > 0:
+                        problems_info = f", {unique_samples} problems ({unique_calls} unique API calls)"
+                    else:
+                        problems_info = ""
+                    print(f"  • Window {window}: {window_counts[window]} errors{problems_info}{acc_info}")
             print()
 
         # Detailed error samples

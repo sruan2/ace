@@ -5,12 +5,22 @@ Download StreamBench (BIRD subset) from Hugging Face and preprocess to:
     with a fallback to SQLite introspection if tables.json is missing/doesn't match.
 (2) output only: question_id, question, sql, difficulty, db_name, db_schema
 
-Example:
+Examples:
+  # Generate test split using dev databases
   python preprocess_streambench_bird.py \
     --bird_root ./data/bird \
     --tables_json ./data/dev_20240627/dev_tables.json \
     --split test \
     --out ./data/streambench_bird_test.jsonl
+
+  # Generate train split using train databases
+  python preprocess_streambench_bird.py \
+    --bird_root ./data/bird_train/train_databases \
+    --split train \
+    --out ./data/streambench_bird_train.jsonl
+
+  Note: For train/validation splits, you need to download the full BIRD train databases (~33GB):
+    python download_text2sql_data.py --dataset bird --split train
 """
 
 from __future__ import annotations

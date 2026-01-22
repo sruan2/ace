@@ -64,7 +64,7 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     Args:
         task_name: Name of the task
         config: Configuration dictionary with data paths and settings
-        mode: Run mode ('offline', 'online', or 'eval_only')
+        mode: Run mode ('offline', 'online', 'online', or 'eval_only')
         db_name: Database name from command line args
         curriculum: Curriculum ordering from command line args
 
@@ -74,8 +74,13 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         - For online mode: only test_samples
         - For eval_only mode: only test_samples
     """
-    # Get max_samples from config, default to None (no limit)
+    # Get max_samples from config
+    # max_samples serves as default for all splits
+    # Individual limits (max_train_samples, max_val_samples, max_test_samples) override the default
     max_samples = config.get("max_samples", None)
+    max_train_samples = config.get("max_train_samples") if "max_train_samples" in config else max_samples
+    max_val_samples = config.get("max_val_samples") if "max_val_samples" in config else max_samples
+    max_test_samples = config.get("max_test_samples") if "max_test_samples" in config else max_samples
 
     # Get bird_db_root from config, with default
     bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
@@ -83,23 +88,23 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     # Get difficulty_filter from config (dataset-level selection)
     difficulty_filter = config.get("difficulty_filter", None)
 
-    processor = DataProcessor(
-        bird_db_root=bird_db_root,
-        max_samples=max_samples,
-        db_name=db_name,
-        difficulty_filter=difficulty_filter,
-        curriculum=curriculum
-    )
-
-
     # For online and eval_only modes, only load test data
     if mode in ["online", "eval_only"]:
         train_samples = None
         val_samples = None
 
+        # Create processor for test data
+        test_processor = DataProcessor(
+            bird_db_root=bird_db_root,
+            max_samples=max_test_samples,
+            db_name=db_name,
+            difficulty_filter=difficulty_filter,
+            curriculum=curriculum
+        )
+
         if "test_data" in config:
             test_samples = load_data(config["test_data"])
-            test_samples = processor.process_task_data(test_samples)
+            test_samples = test_processor.process_task_data(test_samples)
         else:
             raise ValueError(f"{mode} mode requires test data in config.")
 
@@ -108,23 +113,51 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         else:
             print(f"Eval only mode: Testing on {len(test_samples)} examples")
 
+        return train_samples, val_samples, test_samples, test_processor
+
     # For offline mode, load train, val, and optionally test data
     else:
+        # Create separate processors for train, val, and test to apply different max_samples
+        train_processor = DataProcessor(
+            bird_db_root=bird_db_root,
+            max_samples=max_train_samples,
+            db_name=db_name,
+            difficulty_filter=difficulty_filter,
+            curriculum=curriculum
+        )
+
+        val_processor = DataProcessor(
+            bird_db_root=bird_db_root,
+            max_samples=max_val_samples,
+            db_name=db_name,
+            difficulty_filter=difficulty_filter,
+            curriculum=curriculum
+        )
+
+        test_processor = DataProcessor(
+            bird_db_root=bird_db_root,
+            max_samples=max_test_samples,
+            db_name=db_name,
+            difficulty_filter=difficulty_filter,
+            curriculum=curriculum
+        )
+
         train_samples = load_data(config["train_data"])
         val_samples = load_data(config["val_data"])
-        train_samples = processor.process_task_data(train_samples)
-        val_samples = processor.process_task_data(val_samples)
+        train_samples = train_processor.process_task_data(train_samples)
+        val_samples = val_processor.process_task_data(val_samples)
 
         if "test_data" in config:
             test_samples = load_data(config["test_data"])
-            test_samples = processor.process_task_data(test_samples)
+            test_samples = test_processor.process_task_data(test_samples)
         else:
             test_samples = []
 
         print(f"Offline mode: Training on {len(train_samples)} examples, "
               f"validating on {len(val_samples)}, testing on {len(test_samples)}")
 
-    return train_samples, val_samples, test_samples, processor
+        # Return the test_processor as the primary processor for evaluation
+        return train_samples, val_samples, test_samples, test_processor
 
 
 def main():
@@ -167,9 +200,24 @@ def main():
 
         task_config = data_config[args.task_name]
 
-        # Print config settings
-        if "max_samples" in task_config:
-            print(f"Max samples (from config): {task_config['max_samples']}")
+        # Print config settings for max_samples
+        max_samples_default = task_config.get("max_samples", None)
+        has_overrides = "max_train_samples" in task_config or "max_val_samples" in task_config or "max_test_samples" in task_config
+
+        if has_overrides:
+            # Show overrides with default fallback
+            print(f"Max samples (from config):")
+            if max_samples_default is not None:
+                print(f"  - Default: {max_samples_default}")
+            train_val = task_config.get('max_train_samples', max_samples_default or 'No limit')
+            val_val = task_config.get('max_val_samples', max_samples_default or 'No limit')
+            test_val = task_config.get('max_test_samples', max_samples_default or 'No limit')
+            print(f"  - Train: {train_val}")
+            print(f"  - Validation: {val_val}")
+            print(f"  - Test: {test_val}")
+        elif max_samples_default is not None:
+            # Only default specified
+            print(f"Max samples (from config): {max_samples_default} (applies to all splits)")
         else:
             print(f"Max samples: No limit")
 

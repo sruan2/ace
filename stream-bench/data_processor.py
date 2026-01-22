@@ -459,11 +459,9 @@ class DataProcessor:
     def _exec_match(self, predicted_sql: str, gold_sql: str, db_name: str, return_exec_results: bool = False):
         sqlite_path = self._find_sqlite_path(db_name)
         if not sqlite_path:
-            # DB not found -> fall back to exact
-            print(f"SQLite DB for {db_name} not found under {self.bird_db_root}. Falling back to exact match.")
-            if return_exec_results:
-                return False, {"error": f"SQLite DB for {db_name} not found", "db_name": db_name}
-            return False, {}
+            # DB not found -> raise an error and stop
+            error_msg = f"SQLite DB for {db_name} not found under {self.bird_db_root}. Please check database configuration."
+            raise FileNotFoundError(error_msg)
 
         try:
             print(f"[EXEC] Running PREDICTED SQL on {db_name}")

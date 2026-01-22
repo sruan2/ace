@@ -234,29 +234,52 @@ def evaluate_test_samples(
     correct = 0
     results = []
 
+    # Track results by difficulty
+    difficulty_stats = {
+        'simple': {'correct': 0, 'total': 0},
+        'moderate': {'correct': 0, 'total': 0},
+        'challenging': {'correct': 0, 'total': 0}
+    }
+
     print("\nEvaluating predictions...")
     for i, (pred, sample) in enumerate(zip(predictions, test_samples)):
         try:
             gt = sample['target']
             meta = sample.get('others', {})
+            difficulty = meta.get('difficulty', 'unknown')
 
             is_correct = data_processor.answer_is_correct(pred, gt, meta)
 
             if is_correct:
                 correct += 1
 
+            # Track by difficulty
+            if difficulty in difficulty_stats:
+                difficulty_stats[difficulty]['total'] += 1
+                if is_correct:
+                    difficulty_stats[difficulty]['correct'] += 1
+
             results.append({
                 'question': sample['question'],
                 'db_name': meta.get('db_name', ''),
+                'difficulty': difficulty,
                 'predicted_sql': pred,
                 'ground_truth_sql': gt,
                 'is_correct': is_correct
             })
         except Exception as e:
             print(f"  Error evaluating sample {i}: {e}")
+            meta = sample.get('others', {})
+            difficulty = meta.get('difficulty', 'unknown')
+
+            # Track failed sample by difficulty
+            if difficulty in difficulty_stats:
+                difficulty_stats[difficulty]['total'] += 1
+
             results.append({
                 'question': sample.get('question', ''),
-                'db_name': sample.get('others', {}).get('db_name', ''),
+                'db_name': meta.get('db_name', ''),
+                'difficulty': difficulty,
                 'predicted_sql': pred,
                 'ground_truth_sql': sample.get('target', ''),
                 'is_correct': False,
@@ -268,10 +291,21 @@ def evaluate_test_samples(
 
     accuracy = correct / len(test_samples) if len(test_samples) > 0 else 0.0
 
+    # Calculate difficulty-specific accuracies
+    difficulty_accuracies = {}
+    for diff, stats in difficulty_stats.items():
+        if stats['total'] > 0:
+            difficulty_accuracies[diff] = {
+                'accuracy': stats['correct'] / stats['total'],
+                'correct': stats['correct'],
+                'total': stats['total']
+            }
+
     return {
         'accuracy': accuracy,
         'total_samples': len(test_samples),
         'correct': correct,
+        'difficulty_breakdown': difficulty_accuracies,
         'results': results
     }
 
@@ -398,11 +432,22 @@ def main():
     print("EVALUATION RESULTS")
     print("="*70)
     print(f"Playbook: {args.playbook_file}")
-    print(f"Total samples evaluated: {eval_results['total_samples']}")
-    print(f"Correct: {eval_results['correct']}")
-    print(f"Accuracy: {eval_results['accuracy']:.2%}")
+    print(f"\nOverall Performance:")
+    print(f"  Total samples evaluated: {eval_results['total_samples']}")
+    print(f"  Correct: {eval_results['correct']}")
+    print(f"  Accuracy: {eval_results['accuracy']:.2%}")
+
+    # Print difficulty breakdown if available
+    if 'difficulty_breakdown' in eval_results and eval_results['difficulty_breakdown']:
+        print(f"\nPerformance by Difficulty:")
+        for difficulty in ['simple', 'moderate', 'challenging']:
+            if difficulty in eval_results['difficulty_breakdown']:
+                stats = eval_results['difficulty_breakdown'][difficulty]
+                print(f"  {difficulty.capitalize():12s}: {stats['accuracy']:.2%} ({stats['correct']}/{stats['total']})")
+
     if error_stats['total_errors'] > 0:
-        print(f"API errors during generation: {error_stats['total_errors']}")
+        print(f"\nAPI Errors:")
+        print(f"  Total errors during generation: {error_stats['total_errors']}")
         print(f"  (These samples were marked as incorrect)")
     print("="*70)
 
@@ -428,6 +473,7 @@ def main():
                     'accuracy': eval_results['accuracy'],
                     'total_samples': eval_results['total_samples'],
                     'correct': eval_results['correct'],
+                    'difficulty_breakdown': eval_results.get('difficulty_breakdown', {}),
                     'api_errors': error_stats['total_errors'],
                     'error_breakdown': error_stats['error_breakdown'],
                     'error_details': error_stats['error_details'],

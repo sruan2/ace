@@ -497,14 +497,19 @@ class DataProcessor:
                 print(f"  ... ({len(gold_res) - 10} more rows)")
             print("-" * 50)
 
+            # Compare results
+            print(f"[EXEC] Normalizing and comparing results...")
+            match = self._normalize_result(pred_res) == self._normalize_result(gold_res)
+            print(f"[EXEC] Match result: {match}")
+
             if return_exec_results:
                 exec_results = {
                     "predicted_result": pred_res,
                     "ground_truth_result": gold_res,
                     "db_name": db_name
                 }
-                return True, exec_results
-            return True, {}
+                return match, exec_results
+            return match, {}
 
         except Exception as e:
             print(f"\n--- Execution Error ---")
@@ -575,3 +580,17 @@ class DataProcessor:
         finally:
             conn.close()
 
+    @staticmethod
+    def _normalize_result(rows: List[Tuple[Any, ...]]) -> List[Tuple[Any, ...]]:
+        """
+        Normalize query results for comparison.
+        - Rounds floats to 6 decimal places
+        - Sorts rows for order-independent comparison
+        """
+        def norm(v):
+            if isinstance(v, float):
+                return round(v, 6)
+            return v
+
+        normed = [tuple(norm(v) for v in row) for row in rows]
+        return sorted(normed)

@@ -69,10 +69,9 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         curriculum: Curriculum ordering from command line args
 
     Returns:
-        Tuple of (train_samples, val_samples, test_samples, data_processor)
-        - For offline mode: all three are loaded
-        - For online mode: only test_samples
-        - For eval_only mode: only test_samples
+        Tuple of (train_samples, val_samples, test_samples, train_processor, val_processor, test_processor)
+        - For offline mode: all three sample sets and all three processors are returned
+        - For online/eval_only mode: only test_samples and test_processor (train/val processors are None)
     """
     # Get max_samples from config
     # max_samples serves as default for all splits
@@ -89,6 +88,11 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     bird_train_db_root = config.get("bird_train_db_root") if "bird_train_db_root" in config else bird_db_root
     bird_val_db_root = config.get("bird_val_db_root") if "bird_val_db_root" in config else bird_db_root
     bird_test_db_root = config.get("bird_test_db_root") if "bird_test_db_root" in config else bird_db_root
+
+    print(f"[CONFIG] Database paths:")
+    print(f"  bird_train_db_root: {bird_train_db_root}")
+    print(f"  bird_val_db_root: {bird_val_db_root}")
+    print(f"  bird_test_db_root: {bird_test_db_root}")
 
     # Get difficulty_filter from config (dataset-level selection)
     difficulty_filter = config.get("difficulty_filter", None)
@@ -118,7 +122,7 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         else:
             print(f"Eval only mode: Testing on {len(test_samples)} examples")
 
-        return train_samples, val_samples, test_samples, test_processor
+        return train_samples, val_samples, test_samples, None, None, test_processor
 
     # For offline mode, load train, val, and optionally test data
     else:
@@ -161,8 +165,8 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         print(f"Offline mode: Training on {len(train_samples)} examples, "
               f"validating on {len(val_samples)}, testing on {len(test_samples)}")
 
-        # Return the test_processor as the primary processor for evaluation
-        return train_samples, val_samples, test_samples, test_processor
+        # Return all three processors for proper evaluation of each split
+        return train_samples, val_samples, test_samples, train_processor, val_processor, test_processor
 
 
 def main():
@@ -243,7 +247,7 @@ def main():
 
         print()  # blank line
 
-        train_samples, val_samples, test_samples, data_processor = preprocess_data(
+        train_samples, val_samples, test_samples, train_processor, val_processor, test_processor = preprocess_data(
             args.task_name,
             task_config,
             args.mode,
@@ -347,7 +351,9 @@ def main():
             train_samples=train_samples,
             val_samples=val_samples,
             test_samples=test_samples,
-            data_processor=data_processor,
+            train_processor=train_processor,
+            val_processor=val_processor,
+            test_processor=test_processor,
             config=config
         )
 

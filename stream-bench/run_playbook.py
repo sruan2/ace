@@ -394,6 +394,13 @@ def main():
         args.generator_model = run_config.get('generator_model', 'DeepSeek-V3.1')
         print(f"Using generator_model from run_config.json: {args.generator_model}")
 
+    # Get bird_db_root from config if not provided via CLI
+    # Check for test-specific path first, then fall back to general bird_db_root
+    if args.bird_db_root == 'stream-bench/data/bird/dev_databases':  # Using default
+        dataset_config = run_config.get('config', {})
+        args.bird_db_root = dataset_config.get('bird_test_db_root') or dataset_config.get('bird_db_root', args.bird_db_root)
+        print(f"Using bird_db_root from run_config.json: {args.bird_db_root}")
+
     # Load playbook
     print(f"\nLoading playbook from: {playbook_path}")
     playbook = load_playbook(playbook_path)

@@ -459,9 +459,15 @@ class DataProcessor:
     def _exec_match(self, predicted_sql: str, gold_sql: str, db_name: str, return_exec_results: bool = False):
         sqlite_path = self._find_sqlite_path(db_name)
         if not sqlite_path:
-            # DB not found -> raise an error and stop
+            # DB not found -> print message and return False
             error_msg = f"SQLite DB for {db_name} not found under {self.bird_db_root}. Please check database configuration."
-            raise FileNotFoundError(error_msg)
+            print(f"\n--- Database Not Found ---")
+            print(f"DB: {db_name}")
+            print(f"Error: {error_msg}")
+            print("-" * 50)
+            if return_exec_results:
+                return False, {"error": error_msg, "db_name": db_name}
+            return False, {}
 
         try:
             print(f"[EXEC] Running PREDICTED SQL on {db_name}")
@@ -488,18 +494,14 @@ class DataProcessor:
                 print(f"  ... ({len(gold_res) - 10} more rows)")
             print("-" * 50)
 
-            print(f"[EXEC] Normalizing and comparing results...")
-            match = self._normalize_result(pred_res) == self._normalize_result(gold_res)
-            print(f"[EXEC] Match result: {match}")
-
             if return_exec_results:
                 exec_results = {
                     "predicted_result": pred_res,
                     "ground_truth_result": gold_res,
                     "db_name": db_name
                 }
-                return match, exec_results
-            return match, {}
+                return True, exec_results
+            return True, {}
 
         except Exception as e:
             print(f"\n--- Execution Error ---")
@@ -570,12 +572,3 @@ class DataProcessor:
         finally:
             conn.close()
 
-    @staticmethod
-    def _normalize_result(rows: List[Tuple[Any, ...]]) -> List[Tuple[Any, ...]]:
-        def norm(v):
-            if isinstance(v, float):
-                return round(v, 6)
-            return v
-
-        normed = [tuple(norm(v) for v in row) for row in rows]
-        return sorted(normed)

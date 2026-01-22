@@ -182,7 +182,10 @@ class ACE:
         train_samples: Optional[List[Dict[str, Any]]] = None,
         val_samples: Optional[List[Dict[str, Any]]] = None,
         test_samples: Optional[List[Dict[str, Any]]] = None,
-        data_processor = None,
+        train_processor = None,
+        val_processor = None,
+        test_processor = None,
+        data_processor = None,  # Kept for backward compatibility
         config: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
@@ -193,12 +196,18 @@ class ACE:
             train_samples: Training samples (required for offline mode)
             val_samples: Validation samples (required for offline mode)
             test_samples: Test samples (required for online and eval_only modes)
-            data_processor: Data processor instance for the task
+            train_processor: Data processor for training samples
+            val_processor: Data processor for validation samples
+            test_processor: Data processor for test samples
+            data_processor: (Deprecated) Single processor for backward compatibility
             config: Configuration dictionary
 
         Returns:
             Dictionary with results depending on the mode
         """
+        # Handle backward compatibility: if data_processor provided but no split processors, use it for all
+        if data_processor is not None and train_processor is None and val_processor is None and test_processor is None:
+            train_processor = val_processor = test_processor = data_processor
         # Validate inputs
         if mode not in ['offline', 'online', 'eval_only']:
             raise ValueError(f"Invalid mode: {mode}. Must be 'offline', 'online', or 'eval_only'")
@@ -267,7 +276,7 @@ class ACE:
                 print(f"{'='*60}\n")
                 initial_test_results = self._run_test(
                     test_samples=test_samples,
-                    data_processor=data_processor,
+                    data_processor=test_processor,
                     playbook=self.playbook,
                     config=config,
                     log_dir=log_dir,
@@ -276,7 +285,7 @@ class ACE:
                 )
                 results['initial_test_results'] = initial_test_results
                 print(f"Initial Test Accuracy: {initial_test_results['accuracy']:.3f} ({initial_test_results['correct']}/{initial_test_results['total']})\n")
-            
+
             # 2. Run offline training
             print(f"\n{'='*60}")
             print(f"STARTING OFFLINE TRAINING")
@@ -284,7 +293,8 @@ class ACE:
             training_results = self._offline_train(
                 train_samples=train_samples,
                 val_samples=val_samples,
-                data_processor=data_processor,
+                train_processor=train_processor,
+                val_processor=val_processor,
                 config=config,
                 save_path=save_path,
                 usage_log_path=usage_log_path,
@@ -300,7 +310,7 @@ class ACE:
                 print(f"{'='*60}\n")
                 final_test_results = self._run_test(
                     test_samples=test_samples,
-                    data_processor=data_processor,
+                    data_processor=test_processor,
                     playbook=self.best_playbook,
                     config=config,
                     log_dir=log_dir,
@@ -318,7 +328,7 @@ class ACE:
             print(f"{'='*60}\n")
             initial_test_results = self._run_test(
                 test_samples=test_samples,
-                data_processor=data_processor,
+                data_processor=test_processor,
                 playbook=self.playbook,
                 config=config,
                 log_dir=log_dir,
@@ -327,14 +337,14 @@ class ACE:
             )
             results['initial_test_results'] = initial_test_results
             print(f"Initial Test Accuracy: {initial_test_results['accuracy']:.3f} ({initial_test_results['correct']}/{initial_test_results['total']})\n")
-            
+
             # 2. Run online training and testing
             print(f"\n{'='*60}")
             print(f"STARTING ONLINE TRAIN AND TEST")
             print(f"{'='*60}\n")
             online_results = self._online_train_and_test(
                 test_samples=test_samples,
-                data_processor=data_processor,
+                data_processor=test_processor,
                 config=config,
                 save_path=save_path,
                 usage_log_path=usage_log_path,
@@ -342,7 +352,7 @@ class ACE:
                 log_dir=log_dir
             )
             results['online_test_results'] = online_results
-        
+
         else:  # eval_only
             # EVAL ONLY MODE WORKFLOW
             print(f"\n{'='*60}")
@@ -350,7 +360,7 @@ class ACE:
             print(f"{'='*60}\n")
             test_results = self._run_test(
                 test_samples=test_samples,
-                data_processor=data_processor,
+                data_processor=test_processor,
                 playbook=self.playbook,
                 config=config,
                 log_dir=log_dir,
@@ -663,7 +673,8 @@ class ACE:
         self,
         train_samples: List[Dict[str, Any]],
         val_samples: List[Dict[str, Any]],
-        data_processor,
+        train_processor,
+        val_processor,
         config: Dict[str, Any],
         save_path: str,
         usage_log_path: str,
@@ -672,11 +683,12 @@ class ACE:
     ) -> Dict[str, Any]:
         """
         Run offline training
-        
+
         Args:
             train_samples: List of training samples
             val_samples: List of validation samples
-            data_processor: Data processor instance for the task
+            train_processor: Data processor for training samples
+            val_processor: Data processor for validation samples
             config: Configuration dictionary
             save_path: Path to save results
             usage_log_path: Path for bullet usage logging
@@ -731,7 +743,7 @@ class ACE:
                 # Use helper method for training single sample
                 pre_train_answer, post_train_answer, tracking_dict = self._train_single_sample(
                     task_dict=task_dict,
-                    data_processor=data_processor,
+                    data_processor=train_processor,
                     step_id=f"train_e_{epoch}_s_{step}",
                     epoch=epoch,
                     step=step,
@@ -782,18 +794,18 @@ class ACE:
                     print(f"{'='*40}")
                     
                     # Compute training accuracies
-                    pre_train_accuracy = data_processor.evaluate_accuracy(
+                    pre_train_accuracy = train_processor.evaluate_accuracy(
                         epoch_answers_pre_train, epoch_targets_pre_train
                     )
-                    post_train_accuracy = data_processor.evaluate_accuracy(
+                    post_train_accuracy = train_processor.evaluate_accuracy(
                         epoch_answers_post_train, epoch_targets_post_train
                     )
-                    
+
                     # Validation evaluation
                     val_results = {}
                     if val_samples:
                         val_results, val_error_log = evaluate_test_set(
-                            data_processor, self.generator, self.playbook, 
+                            val_processor, self.generator, self.playbook, 
                             val_samples, self.max_tokens, log_dir, 
                             max_workers=test_workers, use_json_mode=use_json_mode
                         )

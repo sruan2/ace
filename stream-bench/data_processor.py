@@ -178,7 +178,11 @@ class DataProcessor:
             if return_exec_results:
                 return result, exec_results
             return result
+        except FileNotFoundError:
+            # Re-raise database not found errors to stop execution
+            raise
         except Exception as e:
+            # Other execution errors: print and return False
             print(f"[EVAL ERROR] Exception during evaluation: {e}")
             if return_exec_results:
                 return False, {"error": str(e), "db_name": db_name}
@@ -459,15 +463,14 @@ class DataProcessor:
     def _exec_match(self, predicted_sql: str, gold_sql: str, db_name: str, return_exec_results: bool = False):
         sqlite_path = self._find_sqlite_path(db_name)
         if not sqlite_path:
-            # DB not found -> print message and return False
+            # DB not found -> raise error and stop execution
             error_msg = f"SQLite DB for {db_name} not found under {self.bird_db_root}. Please check database configuration."
-            print(f"\n--- Database Not Found ---")
+            print(f"\n--- FATAL ERROR: Database Not Found ---")
             print(f"DB: {db_name}")
+            print(f"Expected location: {self.bird_db_root}/{db_name}/{db_name}.sqlite")
             print(f"Error: {error_msg}")
             print("-" * 50)
-            if return_exec_results:
-                return False, {"error": error_msg, "db_name": db_name}
-            return False, {}
+            raise FileNotFoundError(error_msg)
 
         try:
             print(f"[EXEC] Running PREDICTED SQL on {db_name}")

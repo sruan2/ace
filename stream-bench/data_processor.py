@@ -95,6 +95,12 @@ class DataProcessor:
         if self.curriculum is not None:
             raw_data = self._apply_curriculum_ordering(raw_data)
 
+        # Step 4: Apply max_samples limit (if not already applied by balanced difficulty filter)
+        if self.max_samples is not None and self.difficulty_filter != "balanced":
+            if len(raw_data) > self.max_samples:
+                raw_data = raw_data[:self.max_samples]
+                print(f"Applied max_samples limit: {self.max_samples} samples")
+
         # Print summary of processed data
         self._print_data_summary(raw_data)
 

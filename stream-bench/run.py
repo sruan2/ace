@@ -81,18 +81,41 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     max_val_samples = config.get("max_val_samples") if "max_val_samples" in config else max_samples
     max_test_samples = config.get("max_test_samples") if "max_test_samples" in config else max_samples
 
-    # Get bird_db_root from config, with support for separate train/val/test database paths
-    # bird_db_root serves as default for all splits
-    # Individual paths (bird_train_db_root, bird_val_db_root, bird_test_db_root) override the default
-    bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
-    bird_train_db_root = config.get("bird_train_db_root") if "bird_train_db_root" in config else bird_db_root
-    bird_val_db_root = config.get("bird_val_db_root") if "bird_val_db_root" in config else bird_db_root
-    bird_test_db_root = config.get("bird_test_db_root") if "bird_test_db_root" in config else bird_db_root
+    # Detect task type based on config keys
+    # If cosql_db_root is present, it's a CoSQL task, otherwise BIRD
+    if "cosql_db_root" in config:
+        task = "cosql"
+        # Get cosql_db_root from config
+        cosql_db_root = config.get("cosql_db_root", "stream-bench/data/cosql")
+        bird_db_root = None
+        bird_train_db_root = None
+        bird_val_db_root = None
+        bird_test_db_root = None
+        cosql_train_db_root = cosql_db_root
+        cosql_val_db_root = cosql_db_root
+        cosql_test_db_root = cosql_db_root
 
-    print(f"[CONFIG] Database paths:")
-    print(f"  bird_train_db_root: {bird_train_db_root}")
-    print(f"  bird_val_db_root: {bird_val_db_root}")
-    print(f"  bird_test_db_root: {bird_test_db_root}")
+        print(f"[CONFIG] Task: CoSQL")
+        print(f"[CONFIG] Database path: {cosql_db_root}")
+    else:
+        task = "bird"
+        # Get bird_db_root from config, with support for separate train/val/test database paths
+        # bird_db_root serves as default for all splits
+        # Individual paths (bird_train_db_root, bird_val_db_root, bird_test_db_root) override the default
+        bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
+        bird_train_db_root = config.get("bird_train_db_root") if "bird_train_db_root" in config else bird_db_root
+        bird_val_db_root = config.get("bird_val_db_root") if "bird_val_db_root" in config else bird_db_root
+        bird_test_db_root = config.get("bird_test_db_root") if "bird_test_db_root" in config else bird_db_root
+        cosql_db_root = None
+        cosql_train_db_root = None
+        cosql_val_db_root = None
+        cosql_test_db_root = None
+
+        print(f"[CONFIG] Task: BIRD")
+        print(f"[CONFIG] Database paths:")
+        print(f"  bird_train_db_root: {bird_train_db_root}")
+        print(f"  bird_val_db_root: {bird_val_db_root}")
+        print(f"  bird_test_db_root: {bird_test_db_root}")
 
     # Get difficulty_filter from config (dataset-level selection)
     difficulty_filter = config.get("difficulty_filter", None)
@@ -105,6 +128,8 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         # Create processor for test data
         test_processor = DataProcessor(
             bird_db_root=bird_test_db_root,
+            cosql_db_root=cosql_test_db_root,
+            task=task,
             max_samples=max_test_samples,
             db_name=db_name,
             difficulty_filter=difficulty_filter,
@@ -129,6 +154,8 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         # Create separate processors for train, val, and test to apply different max_samples
         train_processor = DataProcessor(
             bird_db_root=bird_train_db_root,
+            cosql_db_root=cosql_train_db_root,
+            task=task,
             max_samples=max_train_samples,
             db_name=db_name,
             difficulty_filter=difficulty_filter,
@@ -137,6 +164,8 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
 
         val_processor = DataProcessor(
             bird_db_root=bird_val_db_root,
+            cosql_db_root=cosql_val_db_root,
+            task=task,
             max_samples=max_val_samples,
             db_name=db_name,
             difficulty_filter=difficulty_filter,
@@ -145,6 +174,8 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
 
         test_processor = DataProcessor(
             bird_db_root=bird_test_db_root,
+            cosql_db_root=cosql_test_db_root,
+            task=task,
             max_samples=max_test_samples,
             db_name=db_name,
             difficulty_filter=difficulty_filter,

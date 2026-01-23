@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 class DataProcessor:
     """
-    BIRD-only DataProcessor with thread-safe evaluation.
+    DataProcessor for BIRD and CoSQL with thread-safe evaluation.
 
     Evaluation mode: execute predicted & gold on sqlite DB and compare result sets
 
@@ -17,17 +17,22 @@ class DataProcessor:
     def __init__(
         self,
         bird_db_root: Optional[str] = None,
+        cosql_db_root: Optional[str] = None,
         exec_timeout_ms: int = 20000,
         exec_max_rows: int = 20000,
         max_samples: Optional[int] = None,  # None = use all samples
         db_name: Optional[str] = None,  # None = use mixed databases (no filter)
         difficulty_filter: Optional[str] = None,  # None = no difficulty filtering
         curriculum: Optional[str] = None,  # None = no curriculum ordering
+        task: str = "bird",  # "bird" or "cosql"
     ):
         """
         Initialize DataProcessor.
 
         Args:
+            bird_db_root: Root directory for BIRD databases
+            cosql_db_root: Root directory for CoSQL databases
+            task: Task type ("bird" or "cosql")
             difficulty_filter: Strategy for selecting samples by difficulty (dataset-level). Options:
                 - None: No filtering, use all samples
                 - "simple-only": Only simple difficulty samples
@@ -41,6 +46,8 @@ class DataProcessor:
                 - "random": Random order (fixed seed)
         """
         self.bird_db_root = bird_db_root
+        self.cosql_db_root = cosql_db_root
+        self.task = task
         self.exec_timeout_ms = exec_timeout_ms
         self.exec_max_rows = exec_max_rows
         self.max_samples = max_samples
@@ -130,8 +137,9 @@ class DataProcessor:
                     "question_id": item.get("question_id"),
                     "difficulty": item.get("difficulty"),
                     "db_name": db_name,
-                    "task": "bird",
-                    "data_source": "streambench_bird",
+                    "task": self.task,
+                    "data_source": f"streambench_{self.task}",
+                    "turn_id": item.get("turn_id"),  # For CoSQL conversational turns
                 }
             })
 
@@ -464,10 +472,12 @@ class DataProcessor:
         sqlite_path = self._find_sqlite_path(db_name)
         if not sqlite_path:
             # DB not found -> raise error and stop execution
-            error_msg = f"SQLite DB for {db_name} not found under {self.bird_db_root}. Please check database configuration."
+            db_root = self.cosql_db_root if self.task == "cosql" else self.bird_db_root
+            error_msg = f"SQLite DB for {db_name} not found under {db_root}. Please check database configuration."
             print(f"\n--- FATAL ERROR: Database Not Found ---")
             print(f"DB: {db_name}")
-            print(f"Expected location: {self.bird_db_root}/{db_name}/{db_name}.sqlite")
+            print(f"Task: {self.task}")
+            print(f"Expected location: {db_root}/{db_name}/{db_name}.sqlite")
             print(f"Error: {error_msg}")
             print("-" * 50)
             raise FileNotFoundError(error_msg)
@@ -522,13 +532,23 @@ class DataProcessor:
 
     def _find_sqlite_path(self, db_name: str) -> Optional[str]:
         """
-        Typical layout after unzipping dev_databases.zip:
-          <bird_db_root>/<db_name>/<db_name>.sqlite
+        Find SQLite database path for either BIRD or CoSQL.
+
+        Typical layouts:
+          BIRD: <bird_db_root>/<db_name>/<db_name>.sqlite
+          CoSQL: <cosql_db_root>/<db_name>/<db_name>.sqlite
         """
-        if not self.bird_db_root:
+        # Determine which db_root to use based on task
+        if self.task == "cosql":
+            db_root = self.cosql_db_root
+        else:
+            db_root = self.bird_db_root
+
+        if not db_root:
             return None
 
-        p = os.path.join(self.bird_db_root, db_name, f"{db_name}.sqlite")
+        # Try standard layout: <db_root>/<db_name>/<db_name>.sqlite
+        p = os.path.join(db_root, db_name, f"{db_name}.sqlite")
         if os.path.exists(p):
             return p
 

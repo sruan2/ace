@@ -23,6 +23,138 @@ matplotlib.use('Agg')  # Use non-GUI backend for saving plots without display
 import matplotlib.pyplot as plt
 
 
+def plot_offline_training_progress(save_path):
+    """
+    Generate training progress plots for offline mode showing pre/post train accuracy per step.
+
+    Args:
+        save_path: Path where results are saved and where plot will be saved
+    """
+    # Load pre_train_post_train_results
+    pre_post_path = os.path.join(save_path, 'pre_train_post_train_results.json')
+    if not os.path.exists(pre_post_path):
+        print(f"Warning: pre_train_post_train_results.json not found at {pre_post_path}. Skipping offline plot generation.")
+        return
+
+    with open(pre_post_path, 'r') as f:
+        step_results = json.load(f)
+
+    if not step_results:
+        print("Warning: Empty pre_train_post_train_results. Skipping offline plot generation.")
+        return
+
+    # Load final results for initial and final test accuracy
+    final_results_path = os.path.join(save_path, 'final_results.json')
+    initial_test_acc = None
+    final_test_acc = None
+
+    if os.path.exists(final_results_path):
+        with open(final_results_path, 'r') as f:
+            final_data = json.load(f)
+            if 'initial_test_results' in final_data:
+                initial_test_acc = final_data['initial_test_results']['accuracy']
+            if 'final_test_results' in final_data:
+                final_test_acc = final_data['final_test_results']['accuracy']
+
+    # Extract data
+    steps = [r['step'] for r in step_results]
+    epochs = [r['epoch'] for r in step_results]
+    pre_train_correct = [r['pre_train_result']['is_correct'] for r in step_results]
+    post_train_correct = [r['post_train_result']['is_correct'] for r in step_results]
+    playbook_tokens = [r['post_train_result']['playbook_num_tokens'] for r in step_results]
+    playbook_length = [r['post_train_result']['playbook_length'] for r in step_results]
+    step_times = [r.get('step_time_seconds', 0) for r in step_results]
+
+    # Calculate cumulative accuracies
+    cumulative_pre = []
+    cumulative_post = []
+    for i in range(len(steps)):
+        cumulative_pre.append(sum(pre_train_correct[:i+1]) / (i+1))
+        cumulative_post.append(sum(post_train_correct[:i+1]) / (i+1))
+
+    # Calculate per-step improvement (1 if improved, 0 if same, -1 if worse)
+    improvement = [int(post) - int(pre) for pre, post in zip(pre_train_correct, post_train_correct)]
+
+    # Create figure with multiple subplots
+    _, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+
+    # Plot 1: Cumulative Accuracy - Pre-train vs Post-train
+    ax1.plot(steps, cumulative_pre, 'r-o', linewidth=2, markersize=6, label='Pre-train (cumulative)', alpha=0.7)
+    ax1.plot(steps, cumulative_post, 'g-s', linewidth=2, markersize=6, label='Post-train (cumulative)', alpha=0.7)
+
+    # Add initial and final test accuracy if available
+    if initial_test_acc is not None:
+        ax1.axhline(y=initial_test_acc, color='blue', linestyle='--', linewidth=2, label=f'Initial Test Acc: {initial_test_acc:.3f}')
+    if final_test_acc is not None:
+        ax1.axhline(y=final_test_acc, color='purple', linestyle='--', linewidth=2, label=f'Final Test Acc: {final_test_acc:.3f}')
+
+    ax1.set_xlabel('Training Step', fontsize=12)
+    ax1.set_ylabel('Cumulative Accuracy', fontsize=12)
+    ax1.set_title('Offline Mode: Training Progress (Cumulative)', fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(fontsize=10)
+    ax1.set_ylim([0, 1.0])
+
+    # Plot 2: Per-Step Correctness (1 = improved, 0 = same, -1 = worse)
+    colors = ['green' if x > 0 else 'gray' if x == 0 else 'red' for x in improvement]
+    ax2.bar(steps, improvement, color=colors, alpha=0.6, edgecolor='black', width=0.8)
+    ax2.axhline(y=0, color='black', linestyle='-', linewidth=1)
+    ax2.set_xlabel('Training Step', fontsize=12)
+    ax2.set_ylabel('Improvement (Post - Pre)', fontsize=12)
+    ax2.set_title('Offline Mode: Per-Step Improvement', fontsize=14, fontweight='bold')
+    ax2.set_yticks([-1, 0, 1])
+    ax2.set_yticklabels(['Worse', 'Same', 'Better'])
+    ax2.grid(True, alpha=0.3, axis='y')
+
+    # Add summary statistics
+    improved = sum(1 for x in improvement if x > 0)
+    same = sum(1 for x in improvement if x == 0)
+    worse = sum(1 for x in improvement if x < 0)
+    ax2.text(0.02, 0.98, f'Improved: {improved}\nSame: {same}\nWorse: {worse}',
+             transform=ax2.transAxes, fontsize=10, verticalalignment='top',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # Plot 3: Playbook Token Growth
+    ax3.plot(steps, playbook_tokens, 'purple', marker='D', linewidth=2, markersize=6, label='Playbook Tokens')
+    ax3.set_xlabel('Training Step', fontsize=12)
+    ax3.set_ylabel('Number of Tokens', fontsize=12)
+    ax3.set_title('Offline Mode: Playbook Growth (Tokens)', fontsize=14, fontweight='bold')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(fontsize=10)
+
+    # Plot 4: Step Time Distribution
+    ax4.plot(steps, step_times, 'orange', marker='o', linewidth=2, markersize=6, label='Step Time')
+    ax4.axhline(y=sum(step_times)/len(step_times), color='red', linestyle='--', linewidth=2,
+                label=f'Avg: {sum(step_times)/len(step_times):.1f}s')
+    ax4.set_xlabel('Training Step', fontsize=12)
+    ax4.set_ylabel('Time (seconds)', fontsize=12)
+    ax4.set_title('Offline Mode: Training Time per Step', fontsize=14, fontweight='bold')
+    ax4.grid(True, alpha=0.3)
+    ax4.legend(fontsize=10)
+
+    plt.tight_layout()
+
+    # Create plots subfolder
+    plots_dir = os.path.join(save_path, 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+
+    # Save plot
+    plot_path = os.path.join(plots_dir, 'offline_training_progress.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"\nOffline training progress plot saved to: {plot_path}")
+    plt.close()
+
+    # Save data as CSV
+    csv_path = os.path.join(plots_dir, 'offline_training_data.csv')
+    with open(csv_path, 'w') as f:
+        f.write("step,epoch,pre_train_correct,post_train_correct,cumulative_pre_acc,cumulative_post_acc,improvement,playbook_tokens,playbook_length,step_time_seconds\n")
+        for i in range(len(steps)):
+            f.write(f"{steps[i]},{epochs[i]},{int(pre_train_correct[i])},{int(post_train_correct[i])},"
+                   f"{cumulative_pre[i]:.4f},{cumulative_post[i]:.4f},{improvement[i]},"
+                   f"{playbook_tokens[i]},{playbook_length[i]},{step_times[i]:.2f}\n")
+    print(f"Offline training data saved to: {csv_path}")
+
+
 def plot_online_performance(save_path, mode='online'):
     """
     Generate performance plots for online mode showing how accuracy changes over steps.
@@ -343,13 +475,18 @@ Examples:
     print(f"Mode: {args.mode}")
     print(f"{'='*60}\n")
 
-    # Generate test performance plots
-    print("Generating test performance plots...")
-    plot_online_performance(args.run_dir, args.mode)
+    # Generate plots based on mode
+    if args.mode == 'online':
+        print("Generating test performance plots...")
+        plot_online_performance(args.run_dir, args.mode)
 
-    # Generate training progress plots
-    print("\nGenerating training progress plots...")
-    plot_training_progress(args.run_dir, args.mode)
+        print("\nGenerating training progress plots...")
+        plot_training_progress(args.run_dir, args.mode)
+    elif args.mode == 'offline':
+        print("Generating offline training progress plots...")
+        plot_offline_training_progress(args.run_dir)
+    else:
+        print(f"Plot generation not supported for mode: {args.mode}")
 
     print(f"\n{'='*60}")
     print(f"PLOTTING COMPLETE")

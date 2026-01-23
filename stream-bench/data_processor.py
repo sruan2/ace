@@ -39,6 +39,9 @@ class DataProcessor:
                 - "moderate-only": Only moderate difficulty samples
                 - "challenging-only": Only challenging difficulty samples
                 - "balanced": Equal distribution (1/3 from each difficulty)
+                - "quasi_balanced": Equal distribution with fallback to closest difficulty.
+                  If not enough samples: simple uses moderate, challenging uses moderate,
+                  moderate uses half simple + half challenging
             curriculum: Strategy for ordering samples (run-level). Options:
                 - None: No reordering (original order from dataset)
                 - "easy_to_hard": Easy -> Medium -> Challenging order
@@ -57,7 +60,7 @@ class DataProcessor:
 
         # Validate difficulty_filter option
         valid_filters = [
-            None, "simple-only", "moderate-only", "challenging-only", "balanced"
+            None, "simple-only", "moderate-only", "challenging-only", "balanced", "quasi_balanced"
         ]
         if self.difficulty_filter not in valid_filters:
             raise ValueError(
@@ -327,6 +330,84 @@ class DataProcessor:
 
             print(f"Difficulty filter 'balanced': Selected {min_count} from each difficulty "
                   f"(total: {len(result)} samples)")
+
+        elif self.difficulty_filter == "quasi_balanced":
+            # Quasi-balanced: Try to get equal distribution (1/3 each),
+            # but if a difficulty doesn't have enough samples, use closest difficulty:
+            # - For challenging: use moderate if not enough challenging
+            # - For simple: use moderate if not enough simple
+            # - For moderate: use half simple and half challenging if not enough moderate
+
+            if self.max_samples is not None:
+                target_per_difficulty = self.max_samples // 3
+            else:
+                # Try to get the maximum possible balanced distribution
+                target_per_difficulty = max(
+                    len(simple_samples),
+                    len(moderate_samples),
+                    len(challenging_samples)
+                )
+
+            # Collect samples for each difficulty category with fallback
+            selected_simple = []
+            selected_moderate = []
+            selected_challenging = []
+
+            # Simple samples: use simple first, then moderate
+            if len(simple_samples) >= target_per_difficulty:
+                selected_simple = simple_samples[:target_per_difficulty]
+            else:
+                selected_simple = simple_samples[:]
+                needed = target_per_difficulty - len(selected_simple)
+                # Use moderate as fallback
+                selected_simple.extend(moderate_samples[:needed])
+
+            # Challenging samples: use challenging first, then moderate
+            if len(challenging_samples) >= target_per_difficulty:
+                selected_challenging = challenging_samples[:target_per_difficulty]
+            else:
+                selected_challenging = challenging_samples[:]
+                needed = target_per_difficulty - len(selected_challenging)
+                # Use moderate as fallback
+                selected_challenging.extend(moderate_samples[:needed])
+
+            # Moderate samples: use moderate first, then half simple and half challenging
+            if len(moderate_samples) >= target_per_difficulty:
+                selected_moderate = moderate_samples[:target_per_difficulty]
+            else:
+                selected_moderate = moderate_samples[:]
+                needed = target_per_difficulty - len(selected_moderate)
+                # Split needed samples between simple and challenging
+                half_needed = needed // 2
+                remainder = needed % 2
+
+                # Use simple and challenging (not already used in other categories)
+                # To avoid reusing samples, we need to track what we've already taken
+                simple_used = len(selected_simple) if len(simple_samples) < target_per_difficulty else 0
+                challenging_used = len(selected_challenging) if len(challenging_samples) < target_per_difficulty else 0
+
+                from_simple = simple_samples[simple_used:simple_used + half_needed + remainder]
+                from_challenging = challenging_samples[challenging_used:challenging_used + half_needed]
+
+                selected_moderate.extend(from_simple)
+                selected_moderate.extend(from_challenging)
+
+            # Combine samples
+            result = selected_simple + selected_moderate + selected_challenging
+
+            # Print detailed selection info
+            simple_from_moderate = max(0, target_per_difficulty - len(simple_samples))
+            challenging_from_moderate = max(0, target_per_difficulty - len(challenging_samples))
+            moderate_from_others = max(0, target_per_difficulty - len(moderate_samples))
+
+            print(f"Difficulty filter 'quasi_balanced': Target {target_per_difficulty} per difficulty")
+            print(f"  Simple: {len(selected_simple)} samples "
+                  f"({len(simple_samples)} native, {simple_from_moderate} from moderate)")
+            print(f"  Moderate: {len(selected_moderate)} samples "
+                  f"({len(moderate_samples)} native, {moderate_from_others} from simple/challenging)")
+            print(f"  Challenging: {len(selected_challenging)} samples "
+                  f"({len(challenging_samples)} native, {challenging_from_moderate} from moderate)")
+            print(f"  Total: {len(result)} samples")
 
         else:
             # Should not reach here due to validation in __init__

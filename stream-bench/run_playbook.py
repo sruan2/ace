@@ -405,13 +405,13 @@ def main():
         print(f"Using generator_model from run_config.json: {args.generator_model}")
 
     # Get bird_db_root from config if not provided via CLI
-    # Use dataset-specific path based on which dataset is being evaluated
+    # Hardcode database paths: train/val use train_databases, test uses dev_databases
     if args.bird_db_root == 'stream-bench/data/bird/dev_databases':  # Using default
-        dataset_config = run_config.get('config', {})
-        # Map dataset type to config key
-        db_root_key = f'bird_{args.dataset}_db_root'
-        args.bird_db_root = dataset_config.get(db_root_key) or dataset_config.get('bird_db_root', args.bird_db_root)
-        print(f"Using bird_db_root for {args.dataset} dataset from run_config.json: {args.bird_db_root}")
+        if args.dataset in ['train', 'val']:
+            args.bird_db_root = 'stream-bench/data/bird_train/train_databases'
+        else:  # test
+            args.bird_db_root = 'stream-bench/data/bird/dev_databases'
+        print(f"Using bird_db_root for {args.dataset} dataset: {args.bird_db_root}")
 
     # Load playbook (or use empty for initial evaluation)
     if playbook_path:

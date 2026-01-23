@@ -260,7 +260,7 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
 
                 # Track by difficulty level
                 sample = test_samples[result["index"]]
-                difficulty = sample.get("difficulty", "unknown")
+                difficulty = sample.get("others", {}).get("difficulty", "unknown")
                 if difficulty not in difficulty_results:
                     difficulty_results[difficulty] = {"correct": 0, "total": 0}
                 difficulty_results[difficulty]["total"] += 1

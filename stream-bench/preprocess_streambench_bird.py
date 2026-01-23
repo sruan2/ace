@@ -4,6 +4,7 @@ Download StreamBench (BIRD subset) from Hugging Face and preprocess to:
 (1) supplement database schema (db_schema) using BIRD tables.json (preferred)
     with a fallback to SQLite introspection if tables.json is missing/doesn't match.
 (2) output only: question_id, question, sql, difficulty, db_name, db_schema
+(3) Create proper train/val split since HuggingFace has identical splits
 
 Examples:
   # Generate test split using dev databases
@@ -13,11 +14,17 @@ Examples:
     --split test \
     --out ./data/streambench_bird_test.jsonl
 
-  # Generate train split using train databases
+  # Generate train split (80% of HF train data) using train databases
   python preprocess_streambench_bird.py \
     --bird_root ./data/bird_train/train_databases \
     --split train \
     --out ./data/streambench_bird_train.jsonl
+
+  # Generate validation split (20% of HF train data) using train databases
+  python preprocess_streambench_bird.py \
+    --bird_root ./data/bird_train/train_databases \
+    --split validation \
+    --out ./data/streambench_bird_val.jsonl
 
   Note: For train/validation splits, you need to download the full BIRD train databases (~33GB):
     python download_text2sql_data.py --dataset bird --split train
@@ -179,10 +186,41 @@ def main():
     ap.add_argument("--bird_root", default="", help="Root dir where BIRD sqlite databases live (fallback if tables.json missing).")
     ap.add_argument("--schema_format", default="json", choices=["json", "string"],
                     help="Store db_schema as structured JSON (json) or as a compact string (string).")
+    ap.add_argument("--train_ratio", type=float, default=0.8,
+                    help="Ratio of data to use for training when splitting train/val (default: 0.8)")
+    ap.add_argument("--seed", type=int, default=42,
+                    help="Random seed for train/val split (default: 42)")
     args = ap.parse_args()
 
     # Load dataset
-    ds = load_streambench_bird(args.split)
+    # Note: HuggingFace train and validation splits are identical, so we create our own split
+    if args.split in ["train", "validation"]:
+        # Load the HF train split and create our own train/val split
+        print(f"Loading HuggingFace 'train' split for custom {args.split} split...")
+        ds_full = load_streambench_bird("train")
+
+        # Convert to list for splitting
+        ds_list = list(ds_full)
+        total_samples = len(ds_list)
+
+        # Shuffle with seed for reproducibility
+        import random
+        random.seed(args.seed)
+        random.shuffle(ds_list)
+
+        # Split based on train_ratio
+        split_idx = int(total_samples * args.train_ratio)
+
+        if args.split == "train":
+            ds = ds_list[:split_idx]
+            print(f"Created train split: {len(ds)} samples ({args.train_ratio*100:.0f}% of {total_samples})")
+        else:  # validation
+            ds = ds_list[split_idx:]
+            print(f"Created validation split: {len(ds)} samples ({(1-args.train_ratio)*100:.0f}% of {total_samples})")
+    else:
+        # For test split, use the original HF split
+        ds = load_streambench_bird(args.split)
+        print(f"Loaded test split: {len(ds)} samples")
 
     # Load schema map from tables.json if provided
     dbid_to_schema = {}
@@ -228,7 +266,7 @@ def main():
 
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    print(f"Wrote: {args.out}")
+    print(f"Wrote {len(ds)} samples to: {args.out}")
     if n_missing_schema:
         print(f"WARNING: {n_missing_schema} rows had missing schema (schema_not_found). Provide --tables_json and/or --bird_root.")
 

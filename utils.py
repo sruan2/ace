@@ -286,10 +286,10 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
         result = indexed_results[idx]
         results["answers"].append(result["final_answer"])
         results["targets"].append(result["target"])
-    
+
     if results["answers"] and results["targets"]:
-        # Pass test_samples to evaluate_accuracy for execution-based evaluation with metadata
-        accuracy = data_processor.evaluate_accuracy(results["answers"], results["targets"], test_samples)
+        # Calculate overall accuracy from worker thread results (no re-evaluation)
+        accuracy = results["correct"] / results["total"] if results["total"] > 0 else 0.0
 
         # Calculate accuracy by difficulty
         accuracy_by_difficulty = {}

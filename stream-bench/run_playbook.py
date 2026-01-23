@@ -368,6 +368,13 @@ def main():
         default=None,
         help='Optional output file to save detailed results (JSON)'
     )
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default='test',
+        choices=['train', 'val', 'test'],
+        help='Which dataset to evaluate on: train_samples.json, val_samples.json, or test_samples.json (default: test)'
+    )
 
     args = parser.parse_args()
 
@@ -398,11 +405,13 @@ def main():
         print(f"Using generator_model from run_config.json: {args.generator_model}")
 
     # Get bird_db_root from config if not provided via CLI
-    # Check for test-specific path first, then fall back to general bird_db_root
+    # Use dataset-specific path based on which dataset is being evaluated
     if args.bird_db_root == 'stream-bench/data/bird/dev_databases':  # Using default
         dataset_config = run_config.get('config', {})
-        args.bird_db_root = dataset_config.get('bird_test_db_root') or dataset_config.get('bird_db_root', args.bird_db_root)
-        print(f"Using bird_db_root from run_config.json: {args.bird_db_root}")
+        # Map dataset type to config key
+        db_root_key = f'bird_{args.dataset}_db_root'
+        args.bird_db_root = dataset_config.get(db_root_key) or dataset_config.get('bird_db_root', args.bird_db_root)
+        print(f"Using bird_db_root for {args.dataset} dataset from run_config.json: {args.bird_db_root}")
 
     # Load playbook (or use empty for initial evaluation)
     if playbook_path:
@@ -413,19 +422,20 @@ def main():
         print(f"\nNo playbook provided - running INITIAL EVALUATION with empty playbook")
         playbook = ""
 
-    # Load test samples from processed_data (has everything we need)
-    test_samples_path = os.path.join(args.results_dir, 'processed_data', 'test_samples.json')
+    # Load samples from processed_data (has everything we need)
+    samples_filename = f'{args.dataset}_samples.json'
+    samples_path = os.path.join(args.results_dir, 'processed_data', samples_filename)
 
-    if not os.path.exists(test_samples_path):
-        print(f"\nError: Test samples file not found: {test_samples_path}")
+    if not os.path.exists(samples_path):
+        print(f"\nError: {args.dataset.capitalize()} samples file not found: {samples_path}")
         print("This file should be created during the ACE training run.")
         return 1
 
-    print(f"\nLoading test samples from: {test_samples_path}")
-    print("  (This file contains the test data with ground truth SQL)")
-    with open(test_samples_path, 'r') as f:
+    print(f"\nLoading {args.dataset} samples from: {samples_path}")
+    print(f"  (This file contains the {args.dataset} data with ground truth SQL)")
+    with open(samples_path, 'r') as f:
         samples = json.load(f)
-    print(f"  Loaded {len(samples)} test samples")
+    print(f"  Loaded {len(samples)} {args.dataset} samples")
 
     # Initialize generator
     print(f"\nInitializing generator with {args.api_provider} API...")
@@ -444,13 +454,14 @@ def main():
     # Print results
     print("\n" + "="*70)
     if args.playbook_file:
-        print("EVALUATION RESULTS")
+        print(f"EVALUATION RESULTS - {args.dataset.upper()} DATASET")
         print("="*70)
         print(f"Playbook: {args.playbook_file}")
     else:
-        print("INITIAL EVALUATION RESULTS (empty playbook)")
+        print(f"INITIAL EVALUATION RESULTS - {args.dataset.upper()} DATASET (empty playbook)")
         print("="*70)
         print(f"Playbook: <empty>")
+    print(f"Dataset: {args.dataset}_samples.json")
     print(f"\nOverall Performance:")
     print(f"  Total samples evaluated: {eval_results['total_samples']}")
     print(f"  Correct: {eval_results['correct']}")
@@ -487,9 +498,12 @@ def main():
 
             with open(output_path, 'w') as f:
                 json.dump({
+                    'dataset': args.dataset,
+                    'dataset_file': f'{args.dataset}_samples.json',
                     'playbook_file': args.playbook_file if args.playbook_file else '<empty>',
                     'playbook_path': playbook_path if playbook_path else None,
                     'is_initial_evaluation': args.playbook_file is None,
+                    'bird_db_root': args.bird_db_root,
                     'accuracy': eval_results['accuracy'],
                     'total_samples': eval_results['total_samples'],
                     'correct': eval_results['correct'],

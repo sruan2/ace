@@ -11,7 +11,7 @@ import traceback
 
 from ace import ACE
 from .data_processor import DataProcessor
-from .plot import plot_online_performance, plot_training_progress
+from .plot import plot_online_performance, plot_training_progress, plot_offline_training_progress
 from finance.run import get_base_parser, load_initial_playbook, load_data
 
 
@@ -435,13 +435,19 @@ def main():
         print(f"ACE run time: {run_elapsed_time/60:.2f} minutes ({run_elapsed_time:.2f} seconds)")
         print(f"{'='*60}\n")
 
-        # Generate performance plots if requested (online mode only)
+        # Generate performance plots if requested
         if args.plot:
             print(f"\n{'='*60}")
             print(f"GENERATING PERFORMANCE PLOTS")
             print(f"{'='*60}\n")
-            plot_online_performance(run_save_path, args.mode)
-            plot_training_progress(run_save_path, args.mode)
+
+            if args.mode == 'online':
+                plot_online_performance(run_save_path, args.mode)
+                plot_training_progress(run_save_path, args.mode)
+            elif args.mode == 'offline':
+                plot_offline_training_progress(run_save_path)
+            else:
+                print(f"Skipping plot generation - not available for {args.mode} mode")
 
         # Close the logger
         if logger:

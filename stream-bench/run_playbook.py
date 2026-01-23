@@ -334,8 +334,8 @@ def main():
     parser.add_argument(
         '--playbook_file',
         type=str,
-        required=True,
-        help='Playbook file path relative to results_dir (e.g., intermediate_playbooks/window_4_final_playbook.txt)'
+        default=None,
+        help='Playbook file path relative to results_dir (e.g., intermediate_playbooks/window_4_final_playbook.txt). If not provided, runs initial evaluation with empty playbook.'
     )
     parser.add_argument(
         '--bird_db_root',
@@ -376,11 +376,14 @@ def main():
         print(f"Error: Results directory not found: {args.results_dir}")
         return 1
 
-    # Join playbook_file with results_dir
-    playbook_path = os.path.join(args.results_dir, args.playbook_file)
-    if not os.path.exists(playbook_path):
-        print(f"Error: Playbook file not found: {playbook_path}")
-        return 1
+    # Handle playbook file (optional)
+    playbook_path = None
+    if args.playbook_file:
+        # Join playbook_file with results_dir
+        playbook_path = os.path.join(args.results_dir, args.playbook_file)
+        if not os.path.exists(playbook_path):
+            print(f"Error: Playbook file not found: {playbook_path}")
+            return 1
 
     # Load run config to get default model and API provider
     run_config = load_run_config(args.results_dir)
@@ -401,10 +404,14 @@ def main():
         args.bird_db_root = dataset_config.get('bird_test_db_root') or dataset_config.get('bird_db_root', args.bird_db_root)
         print(f"Using bird_db_root from run_config.json: {args.bird_db_root}")
 
-    # Load playbook
-    print(f"\nLoading playbook from: {playbook_path}")
-    playbook = load_playbook(playbook_path)
-    print(f"Playbook loaded ({len(playbook)} characters)")
+    # Load playbook (or use empty for initial evaluation)
+    if playbook_path:
+        print(f"\nLoading playbook from: {playbook_path}")
+        playbook = load_playbook(playbook_path)
+        print(f"Playbook loaded ({len(playbook)} characters)")
+    else:
+        print(f"\nNo playbook provided - running INITIAL EVALUATION with empty playbook")
+        playbook = ""
 
     # Load test samples from processed_data (has everything we need)
     test_samples_path = os.path.join(args.results_dir, 'processed_data', 'test_samples.json')
@@ -436,9 +443,14 @@ def main():
 
     # Print results
     print("\n" + "="*70)
-    print("EVALUATION RESULTS")
-    print("="*70)
-    print(f"Playbook: {args.playbook_file}")
+    if args.playbook_file:
+        print("EVALUATION RESULTS")
+        print("="*70)
+        print(f"Playbook: {args.playbook_file}")
+    else:
+        print("INITIAL EVALUATION RESULTS (empty playbook)")
+        print("="*70)
+        print(f"Playbook: <empty>")
     print(f"\nOverall Performance:")
     print(f"  Total samples evaluated: {eval_results['total_samples']}")
     print(f"  Correct: {eval_results['correct']}")
@@ -475,8 +487,9 @@ def main():
 
             with open(output_path, 'w') as f:
                 json.dump({
-                    'playbook_file': args.playbook_file,
-                    'playbook_path': playbook_path,
+                    'playbook_file': args.playbook_file if args.playbook_file else '<empty>',
+                    'playbook_path': playbook_path if playbook_path else None,
+                    'is_initial_evaluation': args.playbook_file is None,
                     'accuracy': eval_results['accuracy'],
                     'total_samples': eval_results['total_samples'],
                     'correct': eval_results['correct'],

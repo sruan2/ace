@@ -47,6 +47,7 @@ def plot_offline_training_progress(save_path):
     train_results_path = os.path.join(save_path, 'train_results.json')
     val_steps = []
     val_accuracies = []
+    val_by_difficulty = {}  # Dictionary to track accuracy by difficulty over steps
 
     if os.path.exists(train_results_path):
         with open(train_results_path, 'r') as f:
@@ -56,6 +57,14 @@ def plot_offline_training_progress(save_path):
                     if 'val_result' in result and result['val_result']:
                         val_steps.append(result['step'])
                         val_accuracies.append(result['val_result']['accuracy'])
+
+                        # Extract difficulty-level accuracies
+                        if 'by_difficulty' in result['val_result']:
+                            for difficulty, diff_data in result['val_result']['by_difficulty'].items():
+                                if difficulty not in val_by_difficulty:
+                                    val_by_difficulty[difficulty] = {'steps': [], 'accuracies': []}
+                                val_by_difficulty[difficulty]['steps'].append(result['step'])
+                                val_by_difficulty[difficulty]['accuracies'].append(diff_data['accuracy'])
 
     # Load final results for initial and final test accuracy
     final_results_path = os.path.join(save_path, 'final_results.json')
@@ -100,6 +109,17 @@ def plot_offline_training_progress(save_path):
     if val_steps and val_accuracies:
         ax1.plot(val_steps, val_accuracies, 'b-^', linewidth=2, markersize=8, label='Validation Accuracy', alpha=0.8, zorder=5)
 
+    # Add difficulty-level validation accuracy lines
+    difficulty_colors = {'simple': 'lightgreen', 'moderate': 'orange', 'challenging': 'darkred'}
+    difficulty_markers = {'simple': 'v', 'moderate': 'D', 'challenging': 'X'}
+    for difficulty in sorted(val_by_difficulty.keys()):
+        diff_data = val_by_difficulty[difficulty]
+        color = difficulty_colors.get(difficulty, 'gray')
+        marker = difficulty_markers.get(difficulty, 'o')
+        ax1.plot(diff_data['steps'], diff_data['accuracies'],
+                linestyle='--', linewidth=1.5, marker=marker, markersize=6,
+                color=color, label=f'Val: {difficulty}', alpha=0.7, zorder=4)
+
     # Add initial and final test accuracy if available
     if initial_test_acc is not None:
         ax1.axhline(y=initial_test_acc, color='cyan', linestyle='--', linewidth=1.5, label=f'Initial Test Acc: {initial_test_acc:.3f}', alpha=0.6)
@@ -110,7 +130,7 @@ def plot_offline_training_progress(save_path):
     ax1.set_ylabel('Cumulative Accuracy', fontsize=12)
     ax1.set_title('Offline Mode: Training Progress (Cumulative)', fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3)
-    ax1.legend(fontsize=10)
+    ax1.legend(fontsize=8, loc='best')
     ax1.set_ylim([0, 1.0])
 
     # Plot 2: Per-Step Correctness (1 = improved, 0 = same, -1 = worse)
@@ -168,13 +188,47 @@ def plot_offline_training_progress(save_path):
     # Create a dictionary mapping steps to validation accuracies for easy lookup
     val_acc_by_step = {step: acc for step, acc in zip(val_steps, val_accuracies)}
 
+    # Create dictionaries mapping steps to difficulty-level accuracies
+    difficulty_acc_by_step = {}
+    all_difficulties = sorted(val_by_difficulty.keys())
+    for difficulty in all_difficulties:
+        difficulty_acc_by_step[difficulty] = {
+            step: acc for step, acc in zip(
+                val_by_difficulty[difficulty]['steps'],
+                val_by_difficulty[difficulty]['accuracies']
+            )
+        }
+
+    # Build CSV header with difficulty columns
+    header_parts = ["step", "epoch", "pre_train_correct", "post_train_correct",
+                   "cumulative_pre_acc", "cumulative_post_acc", "improvement",
+                   "playbook_tokens", "playbook_length", "step_time_seconds", "val_accuracy"]
+    for difficulty in all_difficulties:
+        header_parts.append(f"val_acc_{difficulty}")
+
     with open(csv_path, 'w') as f:
-        f.write("step,epoch,pre_train_correct,post_train_correct,cumulative_pre_acc,cumulative_post_acc,improvement,playbook_tokens,playbook_length,step_time_seconds,val_accuracy\n")
+        f.write(",".join(header_parts) + "\n")
         for i in range(len(steps)):
             val_acc_str = f"{val_acc_by_step[steps[i]]:.4f}" if steps[i] in val_acc_by_step else ""
-            f.write(f"{steps[i]},{epochs[i]},{int(pre_train_correct[i])},{int(post_train_correct[i])},"
-                   f"{cumulative_pre[i]:.4f},{cumulative_post[i]:.4f},{improvement[i]},"
-                   f"{playbook_tokens[i]},{playbook_length[i]},{step_times[i]:.2f},{val_acc_str}\n")
+
+            # Build row
+            row_parts = [
+                str(steps[i]), str(epochs[i]),
+                str(int(pre_train_correct[i])), str(int(post_train_correct[i])),
+                f"{cumulative_pre[i]:.4f}", f"{cumulative_post[i]:.4f}",
+                str(improvement[i]),
+                str(playbook_tokens[i]), str(playbook_length[i]),
+                f"{step_times[i]:.2f}", val_acc_str
+            ]
+
+            # Add difficulty-level accuracies
+            for difficulty in all_difficulties:
+                if steps[i] in difficulty_acc_by_step[difficulty]:
+                    row_parts.append(f"{difficulty_acc_by_step[difficulty][steps[i]]:.4f}")
+                else:
+                    row_parts.append("")
+
+            f.write(",".join(row_parts) + "\n")
     print(f"Offline training data saved to: {csv_path}")
 
 

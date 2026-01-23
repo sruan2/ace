@@ -196,11 +196,11 @@ def evaluate_single_test_sample(args_tuple, data_processor) -> Tuple[Dict, str]:
 
 
 def evaluate_test_set(data_processor, generator, playbook, test_samples,
-                      max_tokens=4096, log_dir=None, max_workers=20, 
+                      max_tokens=4096, log_dir=None, max_workers=20,
                       use_json_mode=False) -> Tuple[Dict, Dict]:
     """
     Parallel evaluation of test set - task-agnostic implementation.
-    
+
     Args:
         data_processor: DataProcessor instance with answer_is_correct and evaluate_accuracy methods
         generator: Generator instance
@@ -210,7 +210,7 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
         log_dir: Directory for logs
         max_workers: Number of parallel workers
         use_json_mode: Whether to use JSON mode
-        
+
     Returns:
         Tuple of (results_dict, error_logs_dict)
     """
@@ -227,6 +227,9 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
         "correct": 0, "total": 0, "no_answer": 0,
         "answers": [], "targets": [], "errors": []
     }
+
+    # Track results by difficulty level
+    difficulty_results = {}
 
     # Store results indexed by original sample position to preserve order
     indexed_results = {}
@@ -255,6 +258,15 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
                 results["correct"] += (1 if result["is_correct"] else 0)
                 results["total"] += 1
 
+                # Track by difficulty level
+                sample = test_samples[result["index"]]
+                difficulty = sample.get("difficulty", "unknown")
+                if difficulty not in difficulty_results:
+                    difficulty_results[difficulty] = {"correct": 0, "total": 0}
+                difficulty_results[difficulty]["total"] += 1
+                if result["is_correct"]:
+                    difficulty_results[difficulty]["correct"] += 1
+
                 if not result["is_correct"]:
                     results["errors"].append({
                         "index": result["index"],
@@ -278,23 +290,42 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
     if results["answers"] and results["targets"]:
         # Pass test_samples to evaluate_accuracy for execution-based evaluation with metadata
         accuracy = data_processor.evaluate_accuracy(results["answers"], results["targets"], test_samples)
-        
+
+        # Calculate accuracy by difficulty
+        accuracy_by_difficulty = {}
+        for difficulty, diff_results in difficulty_results.items():
+            if diff_results["total"] > 0:
+                diff_accuracy = diff_results["correct"] / diff_results["total"]
+                accuracy_by_difficulty[difficulty] = {
+                    "accuracy": diff_accuracy,
+                    "correct": diff_results["correct"],
+                    "total": diff_results["total"]
+                }
+
         final_results = {
             "accuracy": accuracy,
             "correct": results["correct"],
             "total": results["total"],
-            "no_answer": results["no_answer"]
+            "no_answer": results["no_answer"],
+            "by_difficulty": accuracy_by_difficulty
         }
-        
+
         error_logs = {
             "accuracy": accuracy,
             "errors": results["errors"]
         }
-        
+
         print(f"\n📊 Final Accuracy: {accuracy:.3f} ({results['correct']}/{results['total']})")
+
+        # Print accuracy by difficulty level
+        if accuracy_by_difficulty:
+            print(f"\n📈 Accuracy by Difficulty Level:")
+            for difficulty in sorted(accuracy_by_difficulty.keys()):
+                diff_data = accuracy_by_difficulty[difficulty]
+                print(f"  {difficulty}: {diff_data['accuracy']:.3f} ({diff_data['correct']}/{diff_data['total']})")
     else:
-        results = {"accuracy": 0.0, "correct": 0, "total": 0}
+        final_results = {"accuracy": 0.0, "correct": 0, "total": 0, "by_difficulty": {}}
         error_logs = {}
         print(f"\n📊 No valid results!")
-        
+
     return final_results, error_logs

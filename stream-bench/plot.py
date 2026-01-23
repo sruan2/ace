@@ -43,6 +43,20 @@ def plot_offline_training_progress(save_path):
         print("Warning: Empty pre_train_post_train_results. Skipping offline plot generation.")
         return
 
+    # Load validation results from train_results.json
+    train_results_path = os.path.join(save_path, 'train_results.json')
+    val_steps = []
+    val_accuracies = []
+
+    if os.path.exists(train_results_path):
+        with open(train_results_path, 'r') as f:
+            train_data = json.load(f)
+            if 'results' in train_data and train_data['results']:
+                for result in train_data['results']:
+                    if 'val_result' in result and result['val_result']:
+                        val_steps.append(result['step'])
+                        val_accuracies.append(result['val_result']['accuracy'])
+
     # Load final results for initial and final test accuracy
     final_results_path = os.path.join(save_path, 'final_results.json')
     initial_test_acc = None
@@ -82,11 +96,15 @@ def plot_offline_training_progress(save_path):
     ax1.plot(steps, cumulative_pre, 'r-o', linewidth=2, markersize=6, label='Pre-train (cumulative)', alpha=0.7)
     ax1.plot(steps, cumulative_post, 'g-s', linewidth=2, markersize=6, label='Post-train (cumulative)', alpha=0.7)
 
+    # Add validation accuracy line if available
+    if val_steps and val_accuracies:
+        ax1.plot(val_steps, val_accuracies, 'b-^', linewidth=2, markersize=8, label='Validation Accuracy', alpha=0.8, zorder=5)
+
     # Add initial and final test accuracy if available
     if initial_test_acc is not None:
-        ax1.axhline(y=initial_test_acc, color='blue', linestyle='--', linewidth=2, label=f'Initial Test Acc: {initial_test_acc:.3f}')
+        ax1.axhline(y=initial_test_acc, color='cyan', linestyle='--', linewidth=1.5, label=f'Initial Test Acc: {initial_test_acc:.3f}', alpha=0.6)
     if final_test_acc is not None:
-        ax1.axhline(y=final_test_acc, color='purple', linestyle='--', linewidth=2, label=f'Final Test Acc: {final_test_acc:.3f}')
+        ax1.axhline(y=final_test_acc, color='purple', linestyle='--', linewidth=1.5, label=f'Final Test Acc: {final_test_acc:.3f}', alpha=0.6)
 
     ax1.set_xlabel('Training Step', fontsize=12)
     ax1.set_ylabel('Cumulative Accuracy', fontsize=12)
@@ -146,12 +164,17 @@ def plot_offline_training_progress(save_path):
 
     # Save data as CSV
     csv_path = os.path.join(plots_dir, 'offline_training_data.csv')
+
+    # Create a dictionary mapping steps to validation accuracies for easy lookup
+    val_acc_by_step = {step: acc for step, acc in zip(val_steps, val_accuracies)}
+
     with open(csv_path, 'w') as f:
-        f.write("step,epoch,pre_train_correct,post_train_correct,cumulative_pre_acc,cumulative_post_acc,improvement,playbook_tokens,playbook_length,step_time_seconds\n")
+        f.write("step,epoch,pre_train_correct,post_train_correct,cumulative_pre_acc,cumulative_post_acc,improvement,playbook_tokens,playbook_length,step_time_seconds,val_accuracy\n")
         for i in range(len(steps)):
+            val_acc_str = f"{val_acc_by_step[steps[i]]:.4f}" if steps[i] in val_acc_by_step else ""
             f.write(f"{steps[i]},{epochs[i]},{int(pre_train_correct[i])},{int(post_train_correct[i])},"
                    f"{cumulative_pre[i]:.4f},{cumulative_post[i]:.4f},{improvement[i]},"
-                   f"{playbook_tokens[i]},{playbook_length[i]},{step_times[i]:.2f}\n")
+                   f"{playbook_tokens[i]},{playbook_length[i]},{step_times[i]:.2f},{val_acc_str}\n")
     print(f"Offline training data saved to: {csv_path}")
 
 
@@ -461,12 +484,13 @@ Examples:
         print(f"Error: Run directory not found: {args.run_dir}")
         sys.exit(1)
 
-    # Check if test_results.json exists
-    test_results_path = os.path.join(args.run_dir, 'test_results.json')
-    if not os.path.exists(test_results_path):
-        print(f"Error: test_results.json not found in {args.run_dir}")
-        print(f"Expected path: {test_results_path}")
-        sys.exit(1)
+    # Check if test_results.json exists (only required for online mode)
+    if args.mode == 'online':
+        test_results_path = os.path.join(args.run_dir, 'test_results.json')
+        if not os.path.exists(test_results_path):
+            print(f"Error: test_results.json not found in {args.run_dir}")
+            print(f"Expected path: {test_results_path}")
+            sys.exit(1)
 
     print(f"{'='*60}")
     print(f"GENERATING PLOTS FOR ACE RUN")

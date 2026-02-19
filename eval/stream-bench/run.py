@@ -86,7 +86,7 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
     if "cosql_db_root" in config:
         task = "cosql"
         # Get cosql_db_root from config
-        cosql_db_root = config.get("cosql_db_root", "stream-bench/data/cosql")
+        cosql_db_root = config.get("cosql_db_root", "eval/stream-bench/data/cosql")
         bird_db_root = None
         bird_train_db_root = None
         bird_val_db_root = None
@@ -102,7 +102,7 @@ def preprocess_data(task_name, config, mode, db_name=None, curriculum=None):
         # Get bird_db_root from config, with support for separate train/val/test database paths
         # bird_db_root serves as default for all splits
         # Individual paths (bird_train_db_root, bird_val_db_root, bird_test_db_root) override the default
-        bird_db_root = config.get("bird_db_root", "stream-bench/data/bird/dev_databases")
+        bird_db_root = config.get("bird_db_root", "eval/stream-bench/data/bird/dev_databases")
         bird_train_db_root = config.get("bird_train_db_root") if "bird_train_db_root" in config else bird_db_root
         bird_val_db_root = config.get("bird_val_db_root") if "bird_val_db_root" in config else bird_db_root
         bird_test_db_root = config.get("bird_test_db_root") if "bird_test_db_root" in config else bird_db_root

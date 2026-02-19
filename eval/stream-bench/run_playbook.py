@@ -340,7 +340,7 @@ def main():
     parser.add_argument(
         '--bird_db_root',
         type=str,
-        default='stream-bench/data/bird/dev_databases',
+        default='eval/stream-bench/data/bird/dev_databases',
         help='Path to BIRD database root directory (for SQL execution during evaluation)'
     )
     parser.add_argument(
@@ -406,11 +406,11 @@ def main():
 
     # Get bird_db_root from config if not provided via CLI
     # Hardcode database paths: train/val use train_databases, test uses dev_databases
-    if args.bird_db_root == 'stream-bench/data/bird/dev_databases':  # Using default
+    if args.bird_db_root == 'eval/stream-bench/data/bird/dev_databases':  # Using default
         if args.dataset in ['train', 'val']:
-            args.bird_db_root = 'stream-bench/data/bird_train/train_databases'
+            args.bird_db_root = 'eval/stream-bench/data/bird_train/train_databases'
         else:  # test
-            args.bird_db_root = 'stream-bench/data/bird/dev_databases'
+            args.bird_db_root = 'eval/stream-bench/data/bird/dev_databases'
         print(f"Using bird_db_root for {args.dataset} dataset: {args.bird_db_root}")
 
     # Load playbook (or use empty for initial evaluation)

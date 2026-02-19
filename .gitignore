@@ -9,4 +9,4 @@ results/
 .DS_Store
 
 # data files
-stream-bench/data
+eval/stream-bench/data

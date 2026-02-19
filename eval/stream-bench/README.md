@@ -421,8 +421,6 @@ python eval/stream-bench/plot.py \
 
 Or pass `--plot` to `run.py` to generate plots automatically at the end of a run.
 
-See [PLOTTING_GUIDE.md](PLOTTING_GUIDE.md) for more options.
-
 
 ## Reference: All CLI Arguments
 

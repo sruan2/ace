@@ -2,7 +2,6 @@
 
 Benchmarking framework for text-to-SQL evaluation using the ACE (Agentic Context Engineering) system. Supports three datasets: **BIRD**, **CoSQL**, and **Spider**.
 
----
 
 ## Overview
 
@@ -14,7 +13,6 @@ Download DBs → Preprocess data → Configure task → Run ACE → Evaluate pla
 
 ACE trains a playbook (a set of instructions) over a stream of training examples, then evaluates it on a held-out test set.
 
----
 
 ## Directory Structure
 
@@ -47,7 +45,6 @@ eval/stream-bench/
 
 Results are written to a top-level `results/` directory at the repo root.
 
----
 
 ## Setup
 
@@ -67,7 +64,6 @@ cp .env.example .env
 
 All commands below should be run from the **repo root** (`ace/`), not from inside `eval/stream-bench/`.
 
----
 
 ## Step 1: Download Databases
 
@@ -123,7 +119,6 @@ eval/stream-bench/data/spider/tables.json
 
 > **Note:** CoSQL and Spider downloads use `gdown` and require Google Drive access. Install with `pip install gdown` if missing.
 
----
 
 ## Step 2: Preprocess Data
 
@@ -210,7 +205,6 @@ Each `.jsonl` record has the format:
 }
 ```
 
----
 
 ## Step 3: Configure a Run
 
@@ -299,7 +293,6 @@ For CoSQL, replace the `bird_*` keys with `cosql_db_root`:
 | `max_test_samples` | int | Cap for test split only |
 | `difficulty_filter` | string | `simple-only`, `moderate-only`, `challenging-only`, `balanced`, `quasi_balanced` |
 
----
 
 ## Step 4: Run ACE Training
 
@@ -340,7 +333,6 @@ python eval/stream-bench/run.py \
 | `--initial_playbook_path` | none | Warm-start from an existing playbook |
 | `--plot` | false | Auto-generate plots after run completes |
 
----
 
 ## Step 5: Evaluate a Playbook
 
@@ -373,7 +365,6 @@ python eval/stream-bench/run_playbook.py \
 
 > **Note:** `run_playbook.py` reads samples from the `processed_data/` subfolder that `run.py` writes during its setup phase. Run `run.py` at least once first so that folder exists.
 
----
 
 ## Results Structure
 
@@ -411,7 +402,6 @@ Each `*_samples.json` is a list of objects with:
 }
 ```
 
----
 
 ## Plotting
 
@@ -433,7 +423,6 @@ Or pass `--plot` to `run.py` to generate plots automatically at the end of a run
 
 See [PLOTTING_GUIDE.md](PLOTTING_GUIDE.md) for more options.
 
----
 
 ## Reference: All CLI Arguments
 

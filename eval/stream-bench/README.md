@@ -4,22 +4,6 @@ Benchmarking framework for text-to-SQL evaluation using the ACE (Agentic Context
 
 ---
 
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Directory Structure](#directory-structure)
-3. [Setup](#setup)
-4. [Step 1: Download Databases](#step-1-download-databases)
-5. [Step 2: Preprocess Data](#step-2-preprocess-data)
-6. [Step 3: Configure a Run](#step-3-configure-a-run)
-7. [Step 4: Run ACE Training](#step-4-run-ace-training)
-8. [Step 5: Evaluate a Playbook](#step-5-evaluate-a-playbook)
-9. [Results Structure](#results-structure)
-10. [Plotting](#plotting)
-11. [Reference: All CLI Arguments](#reference-all-cli-arguments)
-
----
-
 ## Overview
 
 Stream-bench evaluates the ACE system on text-to-SQL tasks using execution-based accuracy (result-set matching, not string matching). The typical workflow is:

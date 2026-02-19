@@ -228,7 +228,7 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
         "answers": [], "targets": [], "errors": []
     }
 
-    # Track results by difficulty level
+    # NEW: Track results by difficulty level
     difficulty_results = {}
 
     # Store results indexed by original sample position to preserve order
@@ -258,7 +258,7 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
                 results["correct"] += (1 if result["is_correct"] else 0)
                 results["total"] += 1
 
-                # Track by difficulty level
+                # NEW: Track by difficulty level
                 sample = test_samples[result["index"]]
                 difficulty = sample.get("others", {}).get("difficulty", "unknown")
                 if difficulty not in difficulty_results:
@@ -286,7 +286,7 @@ def evaluate_test_set(data_processor, generator, playbook, test_samples,
         result = indexed_results[idx]
         results["answers"].append(result["final_answer"])
         results["targets"].append(result["target"])
-
+    # NEW
     if results["answers"] and results["targets"]:
         # Calculate overall accuracy from worker thread results (no re-evaluation)
         accuracy = results["correct"] / results["total"] if results["total"] > 0 else 0.0
